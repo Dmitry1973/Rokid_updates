@@ -39,7 +39,7 @@ import java.util.Locale;
  * raw log is underneath. Everything sits in the upper part of the HUD, which is
  * the part that is easy to read.
  *
- * Exit: hold a finger on the temple for 3 s, or system Back. On exit a picture
+ * Exit: hold a finger on the temple for 3 s (Back is only recorded). On exit a picture
  * of the results is saved to DCIM/Camera (it syncs to the phone with the photos)
  * and the full log to Download/.
  *
@@ -47,7 +47,7 @@ import java.util.Locale;
  */
 public final class MainActivity extends Activity {
     private static final String TAG = "RokidInputTest";
-    private static final int LOG_LINES = 5;
+    private static final int LOG_LINES = 4;
     private static final long HOLD_MS = 1000L;
     private static final long EXIT_HOLD_MS = 3000L;
     private static final long DOUBLE_TAP_MS = 350L;
@@ -64,6 +64,8 @@ public final class MainActivity extends Activity {
     static final int C_CAMERA = 8;
     static final int C_BROADCAST = 9;
     static final int C_LOST = 10;
+    static final int C_BACK = 11;
+    static final int C_DUPLICATE = 12;
     static final String[] CHECK_NAMES = {
             "Тап по дужке",
             "Двойной тап",
@@ -76,6 +78,8 @@ public final class MainActivity extends Activity {
             "Клавиша камеры",
             "Сигнал кнопки очков",
             "Сработала системная камера",
+            "Системный «Назад»",
+            "Свайп = касание + клавиша",
     };
 
     private static final String[] BROADCASTS = {
@@ -109,6 +113,8 @@ public final class MainActivity extends Activity {
     private boolean moved;
     private boolean holdFired;
     private boolean tapPending;
+    private boolean touching;
+    private long touchUpAt = -100000L;
     private long lastMoveLogAt;
     private String touchDevice = "";
 
@@ -176,7 +182,7 @@ public final class MainActivity extends Activity {
         banner.setTextSize(13);
         banner.setGravity(Gravity.CENTER);
         banner.setPadding(dp(6), dp(3), dp(6), dp(3));
-        banner.setText("ВЫХОД: держите палец на дужке 3 с\nКнопку и кольцо жмите по 1 разу!");
+        banner.setText("ВЫХОД: держите палец на дужке 3 с\n(«Назад» и 2× тап НЕ выходят)");
         panel.addView(banner, new LinearLayout.LayoutParams(-1, -2));
 
         lastView = new TextView(this);
@@ -191,7 +197,7 @@ public final class MainActivity extends Activity {
         checksView = new TextView(this);
         checksView.setTextColor(green);
         checksView.setTypeface(Typeface.MONOSPACE);
-        checksView.setTextSize(11.5f);
+        checksView.setTextSize(11f);
         panel.addView(checksView, new LinearLayout.LayoutParams(-1, -2));
 
         logView = new TextView(this);
@@ -243,8 +249,10 @@ public final class MainActivity extends Activity {
         String raw = String.format(Locale.US, "KEY%s %s(%d) sc=%d r=%d %s", down ? "↓" : "↑",
                 name, code, event.getScanCode(), event.getRepeatCount(), dev);
         if (code == KeyEvent.KEYCODE_BACK) {
-            log(raw);
-            if (!down) exitWithReport();
+            // Not an exit: on Rokid the system may send Back for a double tap,
+            // and we want to see that. Exit is only the 3 s hold.
+            if (down && event.getRepeatCount() == 0) mark(C_BACK, "Системный «НАЗАД»\n" + dev, raw);
+            else log(raw);
             return true;
         }
         if (!down || event.getRepeatCount() > 0) {
@@ -263,7 +271,11 @@ public final class MainActivity extends Activity {
             case KeyEvent.KEYCODE_MEDIA_NEXT:
             case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
             case KeyEvent.KEYCODE_TAB:
-                mark(C_WHEEL, "Колесо/стрелка: " + name + "\n" + dev, raw);
+                if (touching || SystemClock.elapsedRealtime() - touchUpAt < 400L) {
+                    mark(C_DUPLICATE, "Стрелка " + name + " от свайпа\n(дубль касания)", raw);
+                } else {
+                    mark(C_WHEEL, "Колесо/стрелка: " + name + "\n" + dev, raw);
+                }
                 break;
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
@@ -314,6 +326,7 @@ public final class MainActivity extends Activity {
         float slop = dp(20);
         touchDevice = device(event.getDevice());
         if (action == MotionEvent.ACTION_DOWN) {
+            touching = true;
             downX = event.getX();
             downY = event.getY();
             downAt = now;
@@ -332,6 +345,8 @@ public final class MainActivity extends Activity {
                 log(String.format(Locale.US, "TOUCH MOVE x=%.0f y=%.0f", event.getX(), event.getY()));
             }
         } else if (action == MotionEvent.ACTION_UP) {
+            touching = false;
+            touchUpAt = now;
             handler.removeCallbacks(holdTick);
             float dx = event.getX() - downX;
             float dy = event.getY() - downY;
@@ -356,6 +371,8 @@ public final class MainActivity extends Activity {
                 }
             }
         } else if (action == MotionEvent.ACTION_CANCEL) {
+            touching = false;
+            touchUpAt = now;
             handler.removeCallbacks(holdTick);
             log("TOUCH CANCEL");
         }

@@ -90,7 +90,9 @@ public final class CaptureOptionsTest {
 
     @Test public void menuHasActionItemsAtTheEnd() {
         CaptureOptions o = new CaptureOptions();
-        assertEquals(10, CaptureOptions.ITEM_COUNT);
+        assertEquals(11, CaptureOptions.ITEM_COUNT);
+        o.change(CaptureOptions.ITEM_SWIPE_DIR, 1);
+        assertEquals("обратный", o.valueLabel(CaptureOptions.ITEM_SWIPE_DIR));
         org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_HELP));
         org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_CLOSE));
         assertFalse(CaptureOptions.isAction(CaptureOptions.ITEM_JPEG_QUALITY));

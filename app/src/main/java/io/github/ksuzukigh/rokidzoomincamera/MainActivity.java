@@ -76,7 +76,9 @@ public final class MainActivity extends Activity {
     private static final long RECONNECT_DELAY_MS = 2000L;
     private static final long BUTTON_CONFLICT_WINDOW_MS = 4000L;
     private static final long STATUS_VISIBLE_MS = 4000L;
-    private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f};
+    private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 3f, 4f};
+    private static final String[] ACTIONS = {"Записать видео", "Настройки", "Справка", "Выйти из приложения", "Отмена"};
+    private static final int ACT_VIDEO = 0, ACT_SETTINGS = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
     private static final String BUTTON_DOWN = "com.android.action.ACTION_SPRITE_BUTTON_DOWN";
     private static final String BUTTON_UP = "com.android.action.ACTION_SPRITE_BUTTON_UP";
     private static final String BUTTON_LONG = "com.android.action.ACTION_SPRITE_BUTTON_LONG_PRESS";
@@ -94,18 +96,21 @@ public final class MainActivity extends Activity {
     static final String HELP_TEXT =
             "УПРАВЛЕНИЕ\n" +
             "Тап по дужке — фото\n" +
-            "Держать палец 1 с — видео старт/стоп\n" +
-            "Свайп вперёд/назад — зум + / −\n" +
-            "Двойной тап — меню настроек\n" +
+            "Свайп вперёд/назад — зум (1 свайп = 1 шаг)\n" +
+            "Колесо кольца — зум (1 щелчок = 1 шаг)\n" +
+            "Держать палец 1 с — МЕНЮ:\n" +
+            "  видео, настройки, справка, выход\n" +
+            "  (свайп/колесо — выбрать, тап — ОК)\n" +
+            "Во время записи: тап — стоп\n" +
             "\n" +
-            "В МЕНЮ\n" +
+            "В НАСТРОЙКАХ\n" +
             "Тап — следующий пункт\n" +
             "Свайп или колесо — изменить\n" +
-            "Двойной тап — выйти\n" +
+            "Держать 1 с — выйти\n" +
             "\n" +
-            "Кнопку на очках и кольце\n" +
-            "НЕ жать: их забирает\n" +
-            "системная камера (без зума)\n" +
+            "Двойной тап не используется:\n" +
+            "его забирает система.\n" +
+            "Кнопку очков/кольца не жать.\n" +
             "\n" +
             "Тап — закрыть справку";
 
@@ -158,6 +163,9 @@ public final class MainActivity extends Activity {
     private boolean userLeaving;
     private boolean settingsOpen;
     private boolean helpOpen;
+    private boolean actionsOpen;
+    private int actionItem;
+    private final InputArbiter arbiter = new InputArbiter();
     private boolean helpFromMenu;
     private int settingsItem;
     private long videoStartedAt;
@@ -171,7 +179,6 @@ public final class MainActivity extends Activity {
     private boolean touchLongFired;
     private long lastTouchEventAt = -1L;
     private long lastTouchUpAt = -1L;
-    private boolean singleTapPending;
     private MediaRecorder recorder;
     private Uri pendingVideo;
     private ParcelFileDescriptor videoFile;
@@ -202,12 +209,6 @@ public final class MainActivity extends Activity {
     };
     private final Runnable refreshOverlay = new Runnable() {
         @Override public void run() { updateOverlay(); }
-    };
-    private final Runnable singleTap = new Runnable() {
-        @Override public void run() {
-            singleTapPending = false;
-            onSingleTap();
-        }
     };
     private final Runnable touchLongPress = new Runnable() {
         @Override public void run() {
@@ -263,20 +264,10 @@ public final class MainActivity extends Activity {
             } else if (BUTTON_LONG.equals(action) || BUTTON_VERY_LONG.equals(action)) {
                 if (!longPressHandled) {
                     longPressHandled = true;
-                    if (helpOpen) closeHelp();
-                    else if (settingsOpen) closeSettings();
-                    else if (!recording) startVideo();
+                    onTouchLongPress();
                 }
             } else if (BUTTON_UP.equals(action)) {
-                if (helpOpen) {
-                    closeHelp();
-                } else if (settingsOpen && !longPressHandled) {
-                    closeSettings();
-                } else if (recording && !longPressHandled) {
-                    stopVideo();
-                } else if (!longPressHandled && eventAt - buttonDownAt < 900L) {
-                    takePhoto();
-                }
+                if (!longPressHandled && eventAt - buttonDownAt < 900L) onTap();
             }
         }
     };
@@ -329,6 +320,7 @@ public final class MainActivity extends Activity {
         options.selectPhotoSize(prefs.getInt("photo_size", 0));
         options.selectJpegQuality(prefs.getInt("jpeg_quality", CaptureOptions.JPEG_QUALITY_DEFAULT_INDEX));
         options.tapShutter = prefs.getBoolean("tap_shutter", true);
+        options.swipeReversed = prefs.getBoolean("swipe_reversed", false);
         options.selectPreview(prefs.getInt("preview_size", 0),
                 prefs.getInt("preview_shift", CaptureOptions.PREVIEW_SHIFT_DEFAULT_INDEX));
         buildScreen();
@@ -512,6 +504,7 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(reconnect);
         cancelTouchCallbacks();
         if (settingsOpen) closeSettings();
+        closeActions();
         unregisterButtonReceiver();
         unregisterBatteryReceiver();
         unregisterAvailability();
@@ -534,6 +527,10 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if (helpOpen) {
             closeHelp();
+            return;
+        }
+        if (actionsOpen) {
+            closeActions();
             return;
         }
         if (settingsOpen) {
@@ -730,6 +727,7 @@ public final class MainActivity extends Activity {
                 .putInt("jpeg_quality", options.jpegQualityIndex)
                 .putInt("fps", options.fps())
                 .putBoolean("tap_shutter", options.tapShutter)
+                .putBoolean("swipe_reversed", options.swipeReversed)
                 .putInt("preview_size", options.previewSizeIndex)
                 .putInt("preview_shift", options.previewShiftIndex);
         if (size != null) editor.putInt("video_w", size[0]).putInt("video_h", size[1]);
@@ -904,17 +902,17 @@ public final class MainActivity extends Activity {
     /** The always-visible one-line cheat sheet. */
     private void updateHint() {
         if (hintLabel == null) return;
-        if (settingsOpen || helpOpen) {
+        if (settingsOpen || helpOpen || actionsOpen) {
             hintLabel.setVisibility(View.GONE);
             return;
         }
         hintLabel.setVisibility(View.VISIBLE);
         if (recording) {
-            hintLabel.setText("СТОП: тап или удержание");
+            hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: тап");
         } else if (options.tapShutter) {
-            hintLabel.setText("тап: фото · держать: видео\nсвайп: зум · 2× тап: меню");
+            hintLabel.setText("тап: фото · свайп: зум\nдержать 1 с: меню (видео, выход)");
         } else {
-            hintLabel.setText("съёмка тапом выкл · свайп: зум\n2× тап: меню");
+            hintLabel.setText("съёмка тапом выкл · свайп: зум\nдержать 1 с: меню");
         }
     }
 
@@ -1046,7 +1044,7 @@ public final class MainActivity extends Activity {
     // ---------------------------------------------------------------- video
 
     private void startVideo() {
-        if (settingsOpen || helpOpen) return;
+        if (settingsOpen || helpOpen || actionsOpen) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             videoStartPending = true;
             setStatus("Для видео нужен доступ к микрофону");
@@ -1329,7 +1327,7 @@ public final class MainActivity extends Activity {
             sb.append("тап: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
                     .append(" · свайп: дальше");
         } else {
-            sb.append("свайп/колесо: изменить\nтап: след. пункт · 2× тап: выход");
+            sb.append("свайп/колесо: изменить\nтап: след. пункт · держать: выход");
         }
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
@@ -1378,7 +1376,7 @@ public final class MainActivity extends Activity {
             showSettings();
         } else {
             updateHint();
-            setStatus("Справка: 2× тап → меню → «Справка»");
+            setStatus("Справка: держать 1 с → «Справка»");
         }
     }
 
@@ -1398,13 +1396,15 @@ public final class MainActivity extends Activity {
     // ---------------------------------------------------------------- input
 
     private boolean handleTouch(MotionEvent event) {
-        lastTouchEventAt = SystemClock.elapsedRealtime();
+        long now = SystemClock.elapsedRealtime();
+        lastTouchEventAt = now;
         int action = event.getActionMasked();
         float slop = dp(24);
         if (action == MotionEvent.ACTION_DOWN) {
+            arbiter.touchDown(now);
             touchDownX = event.getX();
             touchDownY = event.getY();
-            touchDownAt = SystemClock.elapsedRealtime();
+            touchDownAt = now;
             touchMoved = false;
             touchLongFired = false;
             mainHandler.removeCallbacks(touchLongPress);
@@ -1415,58 +1415,48 @@ public final class MainActivity extends Activity {
                 mainHandler.removeCallbacks(touchLongPress);
             }
         } else if (action == MotionEvent.ACTION_UP) {
+            arbiter.touchUp(now);
             mainHandler.removeCallbacks(touchLongPress);
-            lastTouchUpAt = SystemClock.elapsedRealtime();
+            lastTouchUpAt = now;
             if (touchLongFired) return true;
             int swipe = TouchGesture.swipeDirection(touchDownX, touchDownY, event.getX(), event.getY(), dp(55));
             if (swipe != 0) {
-                cancelPendingTap();
-                onSwipe(swipe);
+                if (options.swipeReversed) swipe = -swipe;
+                if (arbiter.acceptSwipe(now)) onStep(swipe);
             } else if (TouchGesture.isTap(touchDownX, touchDownY, event.getX(), event.getY(),
                     lastTouchUpAt - touchDownAt, slop)) {
-                onTapDetected();
+                onTap();
             }
         } else if (action == MotionEvent.ACTION_CANCEL) {
+            arbiter.touchUp(now);
             mainHandler.removeCallbacks(touchLongPress);
         }
         return true;
     }
 
-    private void onSwipe(int direction) {
+    /** Ring wheel / DPAD / volume keys: filtered so one click = one step. */
+    private void onKeyStep(int direction) {
+        if (arbiter.acceptKey(SystemClock.elapsedRealtime())) onStep(direction);
+    }
+
+    /** One clean step forward (+1) or back (-1). */
+    private void onStep(int direction) {
         if (helpOpen) return;
-        if (settingsOpen) changeSetting(direction);
+        if (actionsOpen) moveAction(direction);
+        else if (settingsOpen) changeSetting(direction);
         else changeZoom(direction);
     }
 
-    private void onTapDetected() {
-        if (helpOpen) {
-            // Close the help immediately; no double-tap wait.
-            cancelPendingTap();
-            closeHelp();
-            return;
-        }
-        if (singleTapPending) {
-            cancelPendingTap();
-            onDoubleTap();
-        } else {
-            singleTapPending = true;
-            mainHandler.postDelayed(singleTap, TouchGesture.DOUBLE_TAP_MS);
-        }
-    }
-
-    private void cancelPendingTap() {
-        singleTapPending = false;
-        mainHandler.removeCallbacks(singleTap);
-    }
-
     private void cancelTouchCallbacks() {
-        cancelPendingTap();
         mainHandler.removeCallbacks(touchLongPress);
     }
 
-    private void onSingleTap() {
+    /** Single tap. No double tap anywhere: the system takes it. */
+    private void onTap() {
         if (helpOpen) {
             closeHelp();
+        } else if (actionsOpen) {
+            runAction(actionItem);
         } else if (settingsOpen) {
             onSettingsTap();
         } else if (recording) {
@@ -1478,31 +1468,70 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private void onDoubleTap() {
-        if (recording) return;
-        if (settingsOpen) closeSettings();
-        else openSettings();
-    }
-
     private void onTouchLongPress() {
-        if (helpOpen) return;
-        if (settingsOpen) {
-            closeSettings();
-            return;
-        }
-        if (!options.tapShutter) return;
-        if (recording) stopVideo();
-        else startVideo();
+        if (helpOpen) closeHelp();
+        else if (actionsOpen) closeActions();
+        else if (settingsOpen) closeSettings();
+        else if (recording) stopVideo();
+        else openActions();
     }
 
-    /** Ring scroll wheel or any pointer scroll: zoom, or change the selected setting. */
+    // ---------------------------------------------------------------- action menu (hold 1 s)
+
+    private void openActions() {
+        if (recording) return;
+        actionsOpen = true;
+        actionItem = ACT_VIDEO;
+        statusLabel.setVisibility(View.GONE);
+        showActions();
+    }
+
+    private void closeActions() {
+        if (!actionsOpen) return;
+        actionsOpen = false;
+        menuPanel.setVisibility(View.GONE);
+        updateHint();
+    }
+
+    private void moveAction(int direction) {
+        actionItem = (actionItem + (direction >= 0 ? 1 : ACTIONS.length - 1)) % ACTIONS.length;
+        showActions();
+    }
+
+    private void showActions() {
+        updateHint();
+        StringBuilder sb = new StringBuilder("МЕНЮ\n");
+        for (int i = 0; i < ACTIONS.length; i++) {
+            sb.append(i == actionItem ? "▶ " : "  ").append(ACTIONS[i]).append('\n');
+        }
+        sb.append("свайп/колесо: выбрать · тап: ОК\nдержать: закрыть");
+        menuPanel.setText(sb.toString());
+        menuPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void runAction(int item) {
+        closeActions();
+        if (item == ACT_VIDEO) {
+            startVideo();
+        } else if (item == ACT_SETTINGS) {
+            openSettings();
+        } else if (item == ACT_HELP) {
+            openHelp(false);
+        } else if (item == ACT_EXIT) {
+            userLeaving = true;
+            videoStartPending = false;
+            finish();
+        }
+    }
+
+    /** Ring scroll wheel or any pointer scroll: zoom, or move in the menus. */
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_SCROLL &&
                 (event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0) {
             float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
             if (v == 0f) v = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
             if (v != 0f) {
-                onSwipe(v > 0f ? 1 : -1);
+                onKeyStep(v > 0f ? 1 : -1);
                 return true;
             }
         }
@@ -1517,12 +1546,12 @@ public final class MainActivity extends Activity {
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_UP ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-            if (event.getRepeatCount() == 0) onSwipe(1);
+            if (event.getRepeatCount() == 0) onKeyStep(1);
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (event.getRepeatCount() == 0) onSwipe(-1);
+            if (event.getRepeatCount() == 0) onKeyStep(-1);
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
@@ -1533,9 +1562,7 @@ public final class MainActivity extends Activity {
             if (event.getRepeatCount() == 0) buttonDownAt = SystemClock.elapsedRealtime();
             else if (!longPressHandled && event.isLongPress()) {
                 longPressHandled = true;
-                if (helpOpen) closeHelp();
-                else if (settingsOpen) closeSettings();
-                else startVideo();
+                onTouchLongPress();
             }
             return true;
         }
@@ -1550,15 +1577,12 @@ public final class MainActivity extends Activity {
             // event was seen just now, treat the key as a tap.
             if (lastTouchUpAt < 0L || SystemClock.elapsedRealtime() - lastTouchUpAt > 400L) {
                 lastTouchEventAt = SystemClock.elapsedRealtime();
-                onTapDetected();
+                onTap();
             }
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_CAMERA || keyCode == KeyEvent.KEYCODE_STEM_PRIMARY) {
-            if (helpOpen) closeHelp();
-            else if (settingsOpen && !longPressHandled) closeSettings();
-            else if (recording && !longPressHandled) stopVideo();
-            else if (!recording && !longPressHandled) takePhoto();
+            if (!longPressHandled) onTap();
             longPressHandled = false;
             return true;
         }
@@ -1651,7 +1675,7 @@ public final class MainActivity extends Activity {
     private void setStatus(final String message) {
         runOnUiThread(new Runnable() {
             @Override public void run() {
-                if (settingsOpen || helpOpen) return;
+                if (settingsOpen || helpOpen || actionsOpen) return;
                 statusLabel.setText(message);
                 statusLabel.setVisibility(View.VISIBLE);
                 mainHandler.removeCallbacks(hideStatus);

@@ -19,9 +19,10 @@ final class CaptureOptions {
     static final int ITEM_TAP_SHUTTER = 5;
     static final int ITEM_PREVIEW_SIZE = 6;
     static final int ITEM_PREVIEW_SHIFT = 7;
-    static final int ITEM_HELP = 8;
-    static final int ITEM_CLOSE = 9;
-    static final int ITEM_COUNT = 10;
+    static final int ITEM_SWIPE_DIR = 8;
+    static final int ITEM_HELP = 9;
+    static final int ITEM_CLOSE = 10;
+    static final int ITEM_COUNT = 11;
 
     /** Limit for the long side of saved photos, pixels; 0 = full size. */
     static final int[] PHOTO_SIZES = {0, 3000, 2000, 1280};
@@ -45,6 +46,7 @@ final class CaptureOptions {
     int videoSizeIndex = 0;
     int fpsIndex = 0;
     boolean tapShutter = true;
+    boolean swipeReversed = false;
     int previewSizeIndex = 0;
     int previewShiftIndex = PREVIEW_SHIFT_DEFAULT_INDEX;
 
@@ -164,6 +166,8 @@ final class CaptureOptions {
             fpsIndex = wrap(fpsIndex + step, frameRates.size());
         } else if (item == ITEM_TAP_SHUTTER) {
             tapShutter = !tapShutter;
+        } else if (item == ITEM_SWIPE_DIR) {
+            swipeReversed = !swipeReversed;
         } else if (item == ITEM_PREVIEW_SIZE) {
             previewSizeIndex = clampIndex(previewSizeIndex - step, PREVIEW_SIZES.length);
         } else if (item == ITEM_PREVIEW_SHIFT) {
@@ -181,6 +185,7 @@ final class CaptureOptions {
             case ITEM_TAP_SHUTTER: return "Съёмка тапом";
             case ITEM_PREVIEW_SIZE: return "Размер картинки";
             case ITEM_PREVIEW_SHIFT: return "Высота картинки";
+            case ITEM_SWIPE_DIR: return "Свайп зума";
             case ITEM_HELP: return "Справка";
             case ITEM_CLOSE: return "Закрыть меню";
             default: return "";
@@ -210,6 +215,7 @@ final class CaptureOptions {
                 return v == 0 ? "максимум" : "до " + v + " px";
             }
             case ITEM_JPEG_QUALITY: return JPEG_QUALITIES[jpegQualityIndex] + "%";
+            case ITEM_SWIPE_DIR: return swipeReversed ? "обратный" : "обычный";
             case ITEM_HELP: return "тап — открыть";
             case ITEM_CLOSE: return "тап — выйти";
             case ITEM_VIDEO_SIZE: {
