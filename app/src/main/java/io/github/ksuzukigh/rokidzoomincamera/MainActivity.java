@@ -103,7 +103,7 @@ public final class MainActivity extends Activity {
             "  настройки, видео, справка, выход\n" +
             "  свайп/колесо — выбрать, ОК — выполнить\n" +
             "«Назад» в меню — выйти из приложения\n" +
-            "Во время записи: ОК — стоп\n" +
+            "Во время записи: тап — стоп,\n  свайп/колесо — зум\n" +
             "\n" +
             "В НАСТРОЙКАХ\n" +
             "ОК — следующий пункт\n" +
@@ -156,6 +156,7 @@ public final class MainActivity extends Activity {
     private int photoMaxSide;
     private int photoQuality = 95;
     private boolean recording;
+    private int recordingFps = 30;
     private boolean recorderStarted;
     private boolean stopVideoRequested;
     private boolean stopVideoScheduled;
@@ -882,10 +883,7 @@ public final class MainActivity extends Activity {
     }
 
     private void changeZoom(int direction) {
-        if (recording) {
-            setStatus("Во время записи зум не меняется");
-            return;
-        }
+        if (recording && !recorderStarted) return;
         int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, zoomIndex + direction));
         if (next == zoomIndex) {
             flashZoom(direction > 0 ? "макс. 4×" : "мин. 1×");
@@ -898,7 +896,10 @@ public final class MainActivity extends Activity {
         CameraCaptureSession current = session;
         if (builder != null && current != null && cameraHandler != null) {
             try {
-                setCommonControls(builder, true);
+                // During recording the same crop goes to the recorder surface, so
+                // the zoom lands in the video file (digital, from the HAL crop).
+                if (recording) setVideoControls(builder, recordingFps);
+                else setCommonControls(builder, true);
                 current.setRepeatingRequest(builder.build(), null, cameraHandler);
             } catch (CameraAccessException | IllegalStateException ignored) {}
         }
@@ -938,7 +939,7 @@ public final class MainActivity extends Activity {
         }
         hintLabel.setVisibility(View.VISIBLE);
         if (recording) {
-            hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: ОК / тап");
+            hintLabel.setText("ЗАПИСЬ · тап: стоп · свайп/колесо: зум");
         } else if (options.tapShutter) {
             hintLabel.setText("тап: фото · свайп: зум\nдержать палец 1 с или «Назад»: МЕНЮ");
         } else {
@@ -1091,6 +1092,7 @@ public final class MainActivity extends Activity {
             return;
         }
         final int fps = options.fps();
+        recordingFps = fps;
         videoStartPending = false;
         recording = true;
         recorderStarted = false;

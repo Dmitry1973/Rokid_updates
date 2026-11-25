@@ -63,4 +63,20 @@ public final class PhotoCropTest {
         assertEquals(1, PhotoCrop.sampleSize(1008, 2000));
         assertEquals(1, PhotoCrop.sampleSize(4032, 0));
     }
+
+    @Test public void everyFormatAtEveryZoomKeepsItsAspect() {
+        float[] aspects = CaptureOptions.PHOTO_ASPECTS;
+        float[] zooms = {1f, 1.5f, 2f, 3f, 4f};
+        for (float a : aspects) {
+            for (float z : zooms) {
+                int[] r = PhotoCrop.crop(4032, 3024, z, a);
+                int w = r == null ? 4032 : r[2] - r[0];
+                int h = r == null ? 3024 : r[3] - r[1];
+                assertEquals("aspect " + a + " zoom " + z, a, (float) w / h, 0.01f);
+                assertEquals("centred " + a + " zoom " + z, 4032, (r == null ? 0 : r[0]) * 2 + w, 2);
+                int[] limited = PhotoCrop.limitSize(w, h, 2000);
+                assertEquals(a, (float) limited[0] / limited[1], 0.01f);
+            }
+        }
+    }
 }
