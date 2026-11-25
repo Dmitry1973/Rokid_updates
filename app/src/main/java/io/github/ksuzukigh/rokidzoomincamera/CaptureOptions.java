@@ -216,8 +216,8 @@ final class CaptureOptions {
             }
             case ITEM_JPEG_QUALITY: return JPEG_QUALITIES[jpegQualityIndex] + "%";
             case ITEM_SWIPE_DIR: return swipeReversed ? "обратный" : "обычный";
-            case ITEM_HELP: return "тап — открыть";
-            case ITEM_CLOSE: return "тап — выйти";
+            case ITEM_HELP: return "нажать колесо";
+            case ITEM_CLOSE: return "нажать колесо";
             case ITEM_VIDEO_SIZE: {
                 int[] s = videoSize();
                 return s == null ? "—" : String.format(Locale.US, "%d×%d", s[0], s[1]);

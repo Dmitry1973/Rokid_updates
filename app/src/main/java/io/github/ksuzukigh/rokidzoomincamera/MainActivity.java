@@ -95,24 +95,23 @@ public final class MainActivity extends Activity {
 
     static final String HELP_TEXT =
             "УПРАВЛЕНИЕ\n" +
-            "Тап по дужке / ОК кольца — фото\n" +
-            "Свайп по дужке или колесо — зум\n  (1 движение = 1 шаг)\n" +
-            "Нажать колесо кольца или «Назад» — МЕНЮ:\n" +
-            "  настройки, видео, справка, выход\n" +
-            "  свайп/колесо — выбрать, ОК — выполнить\n" +
+            "Фото — правая кнопка кольца\n  или тап по дужке\n" +
+            "Зум — крутить колесо кольца\n  или свайп по дужке (1 щелчок = 1 шаг)\n" +
+            "МЕНЮ — нажать на колесо кольца\n  (или «Назад»)\n" +
+            "В меню: крутить колесо — выбрать,\n  нажать колесо — выполнить\n" +
             "«Назад» в меню — выйти из приложения\n" +
-            "Во время записи: тап — стоп,\n  свайп/колесо — зум\n" +
+            "Запись: правая кнопка — стоп,\n  колесо — зум\n" +
             "\n" +
-            "В НАСТРОЙКАХ\n" +
-            "ОК — следующий пункт\n" +
-            "Свайп/колесо — изменить\n" +
+            "НАСТРОЙКИ\n" +
+            "Нажать колесо — следующий пункт\n" +
+            "Крутить колесо — изменить\n" +
             "«Назад» — сохранить и выйти\n" +
             "\n" +
-            "Кнопку очков и кнопку камеры\n" +
-            "на кольце не жать: их забирает\n" +
+            "Левую кнопку кольца и кнопку\n" +
+            "на очках не жать: их забирает\n" +
             "системная камера.\n" +
             "\n" +
-            "ОК — закрыть справку";
+            "Нажать колесо — закрыть справку";
 
     private final Handler mainHandler = new Handler();
     private final CaptureOptions options = new CaptureOptions();
@@ -955,11 +954,11 @@ public final class MainActivity extends Activity {
         }
         hintLabel.setVisibility(View.VISIBLE);
         if (recording) {
-            hintLabel.setText("ЗАПИСЬ · тап: стоп · свайп/колесо: зум");
+            hintLabel.setText("ЗАПИСЬ · стоп: правая кнопка\nколесо: зум");
         } else if (options.tapShutter) {
-            hintLabel.setText("тап / прав. кнопка: фото · колесо: зум\nнажать колесо или «Назад»: МЕНЮ");
+            hintLabel.setText("фото: правая кнопка · зум: колесо\nменю: нажать на колесо");
         } else {
-            hintLabel.setText("съёмка тапом выкл · колесо: зум\n«Назад»: меню");
+            hintLabel.setText("съёмка тапом выкл · зум: колесо\nменю: нажать на колесо");
         }
     }
 
@@ -1391,10 +1390,10 @@ public final class MainActivity extends Activity {
         }
         sb.append("Фото получится: ").append(expectedPhotoSize()).append('\n');
         if (CaptureOptions.isAction(settingsItem)) {
-            sb.append("ОК: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
-                    .append(" · колесо: дальше");
+            sb.append("нажать колесо: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
+                    .append(" · крутить: дальше");
         } else {
-            sb.append("колесо: изменить · ОК: след. пункт\n«Назад»: сохранить и выйти");
+            sb.append("крутить колесо: изменить\nнажать колесо: след. пункт · «Назад»: выход");
         }
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
@@ -1578,7 +1577,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < ACTIONS.length; i++) {
             sb.append(i == actionItem ? "▶ " : "  ").append(ACTIONS[i]).append('\n');
         }
-        sb.append("колесо: выбрать · ОК: выполнить\n«Назад» ещё раз: выйти из приложения");
+        sb.append("крутить колесо: выбрать\nнажать колесо: выполнить · «Назад»: выйти");
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
     }

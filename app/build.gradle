@@ -15,8 +15,8 @@ android {
         applicationId 'io.github.ksuzukigh.rokidzoomincamera.ru'
         minSdk 32
         targetSdk 32
-        versionCode 242
-        versionName '2.4.2-ru'
+        versionCode 243
+        versionName '2.4.3-ru'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
 
