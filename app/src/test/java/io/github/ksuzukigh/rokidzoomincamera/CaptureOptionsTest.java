@@ -68,4 +68,32 @@ public final class CaptureOptionsTest {
         o.setAvailable(Arrays.asList(new int[]{1920, 1080}), Arrays.asList());
         assertEquals(30, o.fps());
     }
+
+    @Test public void photoSizeAndQuality() {
+        CaptureOptions o = new CaptureOptions();
+        assertEquals(0, o.photoMaxLongSide());
+        assertEquals("максимум", o.valueLabel(CaptureOptions.ITEM_PHOTO_SIZE));
+        o.change(CaptureOptions.ITEM_PHOTO_SIZE, 1);
+        assertEquals(3000, o.photoMaxLongSide());
+        assertEquals("до 3000 px", o.valueLabel(CaptureOptions.ITEM_PHOTO_SIZE));
+        assertEquals(95, o.jpegQuality());
+        o.change(CaptureOptions.ITEM_JPEG_QUALITY, 1);
+        assertEquals(100, o.jpegQuality());
+        o.change(CaptureOptions.ITEM_JPEG_QUALITY, 1);
+        assertEquals(100, o.jpegQuality());
+        o.change(CaptureOptions.ITEM_JPEG_QUALITY, -1);
+        o.change(CaptureOptions.ITEM_JPEG_QUALITY, -1);
+        assertEquals("90%", o.valueLabel(CaptureOptions.ITEM_JPEG_QUALITY));
+        o.selectJpegQuality(99);
+        assertEquals(70, o.jpegQuality());
+    }
+
+    @Test public void menuHasActionItemsAtTheEnd() {
+        CaptureOptions o = new CaptureOptions();
+        assertEquals(10, CaptureOptions.ITEM_COUNT);
+        org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_HELP));
+        org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_CLOSE));
+        assertFalse(CaptureOptions.isAction(CaptureOptions.ITEM_JPEG_QUALITY));
+        assertEquals("Закрыть меню", o.itemName(CaptureOptions.ITEM_CLOSE));
+    }
 }

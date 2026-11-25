@@ -9,6 +9,13 @@ final class ZoomMath {
         return Math.max(1f, Math.min(requested, Math.max(1f, maximum)));
     }
 
+    /** Text zoom scale for the HUD, e.g. "1× ■■□□□□□ 4×" for step 1 of 7. */
+    static String bar(int index, int steps) {
+        StringBuilder sb = new StringBuilder("1× ");
+        for (int i = 0; i < steps; i++) sb.append(i <= index ? '■' : '□');
+        return sb.append(" 4×").toString();
+    }
+
     static Rect crop(Rect sensor, float requestedZoom, float maximumZoom) {
         int[] edges = cropEdges(sensor.left, sensor.top, sensor.right, sensor.bottom,
                 requestedZoom, maximumZoom);

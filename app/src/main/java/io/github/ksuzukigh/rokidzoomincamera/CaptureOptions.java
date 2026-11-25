@@ -2,6 +2,7 @@ package io.github.ksuzukigh.rokidzoomincamera;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -11,12 +12,21 @@ import java.util.Locale;
  */
 final class CaptureOptions {
     static final int ITEM_PHOTO_ASPECT = 0;
-    static final int ITEM_VIDEO_SIZE = 1;
-    static final int ITEM_FPS = 2;
-    static final int ITEM_TAP_SHUTTER = 3;
-    static final int ITEM_PREVIEW_SIZE = 4;
-    static final int ITEM_PREVIEW_SHIFT = 5;
-    static final int ITEM_COUNT = 6;
+    static final int ITEM_PHOTO_SIZE = 1;
+    static final int ITEM_JPEG_QUALITY = 2;
+    static final int ITEM_VIDEO_SIZE = 3;
+    static final int ITEM_FPS = 4;
+    static final int ITEM_TAP_SHUTTER = 5;
+    static final int ITEM_PREVIEW_SIZE = 6;
+    static final int ITEM_PREVIEW_SHIFT = 7;
+    static final int ITEM_HELP = 8;
+    static final int ITEM_CLOSE = 9;
+    static final int ITEM_COUNT = 10;
+
+    /** Limit for the long side of saved photos, pixels; 0 = full size. */
+    static final int[] PHOTO_SIZES = {0, 3000, 2000, 1280};
+    static final int[] JPEG_QUALITIES = {100, 95, 90, 85, 80, 70};
+    static final int JPEG_QUALITY_DEFAULT_INDEX = 1;
 
     /** Preview window size, percent of the HUD. */
     static final int[] PREVIEW_SIZES = {100, 90, 80, 70, 60, 50};
@@ -30,6 +40,8 @@ final class CaptureOptions {
     private final List<int[]> videoSizes = new ArrayList<>();
     private final List<Integer> frameRates = new ArrayList<>();
     int photoAspectIndex = 0;
+    int photoSizeIndex = 0;
+    int jpegQualityIndex = JPEG_QUALITY_DEFAULT_INDEX;
     int videoSizeIndex = 0;
     int fpsIndex = 0;
     boolean tapShutter = true;
@@ -46,7 +58,11 @@ final class CaptureOptions {
             }
             if (!duplicate) videoSizes.add(new int[]{size[0], size[1]});
         }
-        Collections.sort(videoSizes, (a, b) -> Long.compare((long) b[0] * b[1], (long) a[0] * a[1]));
+        Collections.sort(videoSizes, new Comparator<int[]>() {
+            @Override public int compare(int[] a, int[] b) {
+                return Long.compare((long) b[0] * b[1], (long) a[0] * a[1]);
+            }
+        });
         frameRates.clear();
         for (Integer value : fps) {
             if (value != null && value > 0 && !frameRates.contains(value)) frameRates.add(value);
@@ -92,6 +108,28 @@ final class CaptureOptions {
         photoAspectIndex = clampIndex(index, PHOTO_ASPECTS.length);
     }
 
+    void selectPhotoSize(int index) {
+        photoSizeIndex = clampIndex(index, PHOTO_SIZES.length);
+    }
+
+    void selectJpegQuality(int index) {
+        jpegQualityIndex = clampIndex(index, JPEG_QUALITIES.length);
+    }
+
+    /** 0 = no limit. */
+    int photoMaxLongSide() {
+        return PHOTO_SIZES[photoSizeIndex];
+    }
+
+    int jpegQuality() {
+        return JPEG_QUALITIES[jpegQualityIndex];
+    }
+
+    /** Items that do something on tap instead of holding a value. */
+    static boolean isAction(int item) {
+        return item == ITEM_HELP || item == ITEM_CLOSE;
+    }
+
     float photoAspect() {
         return PHOTO_ASPECTS[photoAspectIndex];
     }
@@ -115,6 +153,11 @@ final class CaptureOptions {
         int step = direction >= 0 ? 1 : -1;
         if (item == ITEM_PHOTO_ASPECT) {
             photoAspectIndex = wrap(photoAspectIndex + step, PHOTO_ASPECTS.length);
+        } else if (item == ITEM_PHOTO_SIZE) {
+            photoSizeIndex = wrap(photoSizeIndex + step, PHOTO_SIZES.length);
+        } else if (item == ITEM_JPEG_QUALITY) {
+            // forward = better quality
+            jpegQualityIndex = clampIndex(jpegQualityIndex - step, JPEG_QUALITIES.length);
         } else if (item == ITEM_VIDEO_SIZE && !videoSizes.isEmpty()) {
             videoSizeIndex = wrap(videoSizeIndex + step, videoSizes.size());
         } else if (item == ITEM_FPS) {
@@ -131,11 +174,15 @@ final class CaptureOptions {
     String itemName(int item) {
         switch (item) {
             case ITEM_PHOTO_ASPECT: return "Формат фото";
+            case ITEM_PHOTO_SIZE: return "Размер фото";
+            case ITEM_JPEG_QUALITY: return "Качество JPEG";
             case ITEM_VIDEO_SIZE: return "Разрешение видео";
             case ITEM_FPS: return "Кадров в секунду";
-            case ITEM_TAP_SHUTTER: return "Съёмка тапом по дужке";
+            case ITEM_TAP_SHUTTER: return "Съёмка тапом";
             case ITEM_PREVIEW_SIZE: return "Размер картинки";
             case ITEM_PREVIEW_SHIFT: return "Высота картинки";
+            case ITEM_HELP: return "Справка";
+            case ITEM_CLOSE: return "Закрыть меню";
             default: return "";
         }
     }
@@ -158,6 +205,13 @@ final class CaptureOptions {
     String valueLabel(int item) {
         switch (item) {
             case ITEM_PHOTO_ASPECT: return PHOTO_ASPECT_LABELS[photoAspectIndex];
+            case ITEM_PHOTO_SIZE: {
+                int v = PHOTO_SIZES[photoSizeIndex];
+                return v == 0 ? "максимум" : "до " + v + " px";
+            }
+            case ITEM_JPEG_QUALITY: return JPEG_QUALITIES[jpegQualityIndex] + "%";
+            case ITEM_HELP: return "тап — открыть";
+            case ITEM_CLOSE: return "тап — выйти";
             case ITEM_VIDEO_SIZE: {
                 int[] s = videoSize();
                 return s == null ? "—" : String.format(Locale.US, "%d×%d", s[0], s[1]);

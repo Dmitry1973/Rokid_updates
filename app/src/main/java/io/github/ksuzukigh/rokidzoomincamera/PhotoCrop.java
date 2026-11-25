@@ -60,6 +60,29 @@ final class PhotoCrop {
         return new float[]{left, top, left + w, top + h};
     }
 
+    /**
+     * Output size after limiting the long side to {@code maxLongSide}
+     * (0 = no limit). Never upscales. Returns {width, height}.
+     */
+    static int[] limitSize(int width, int height, int maxLongSide) {
+        int longSide = Math.max(width, height);
+        if (maxLongSide <= 0 || longSide <= maxLongSide || width <= 0 || height <= 0) {
+            return new int[]{width, height};
+        }
+        double scale = (double) maxLongSide / longSide;
+        int w = Math.max(1, (int) Math.round(width * scale));
+        int h = Math.max(1, (int) Math.round(height * scale));
+        return new int[]{w, h};
+    }
+
+    /** Largest power-of-two decoder subsampling that keeps the long side >= the target. */
+    static int sampleSize(int longSide, int targetLongSide) {
+        if (targetLongSide <= 0 || longSide <= targetLongSide) return 1;
+        int sample = 1;
+        while (longSide / (sample * 2) >= targetLongSide) sample *= 2;
+        return sample;
+    }
+
     private static int even(double value) {
         int v = Math.max(2, (int) Math.round(value));
         return v - (v & 1);

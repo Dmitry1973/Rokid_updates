@@ -18,4 +18,10 @@ public final class ZoomMathTest {
         assertArrayEquals(new int[]{0, 0, 4032, 3024},
                 ZoomMath.cropEdges(0, 0, 4032, 3024, 0.5f, 8f));
     }
+
+    @Test public void barShowsCurrentStep() {
+        org.junit.Assert.assertEquals("1× ■□□□□□□ 4×", ZoomMath.bar(0, 7));
+        org.junit.Assert.assertEquals("1× ■■□□□□□ 4×", ZoomMath.bar(1, 7));
+        org.junit.Assert.assertEquals("1× ■■■■■■■ 4×", ZoomMath.bar(6, 7));
+    }
 }

@@ -2,33 +2,82 @@ package kz.rokid.inputtest;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.SystemClock;
+import android.provider.MediaStore;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
+import java.util.Date;
 import java.util.Locale;
 
 /**
- * Shows every input event that reaches an app on the glasses: keys (with the
- * device that sent them), touch, scroll/generic motion and the Rokid button
- * broadcasts. Used to find out what the Rokid ring wheel and buttons send.
- * Exit: press Back twice within 1.5 s.
+ * "Тест кнопок и кольца": shows, in plain Russian, which input signals reach an
+ * app on the glasses. A checklist marks every kind of signal that arrived; the
+ * raw log is underneath. Everything sits in the upper part of the HUD, which is
+ * the part that is easy to read.
+ *
+ * Exit: hold a finger on the temple for 3 s, or system Back. On exit a picture
+ * of the results is saved to DCIM/Camera (it syncs to the phone with the photos)
+ * and the full log to Download/.
+ *
+ * No lambdas on purpose: the project must also build with plain javac + dx.
  */
 public final class MainActivity extends Activity {
     private static final String TAG = "RokidInputTest";
-    private static final int MAX_LINES = 13;
+    private static final int LOG_LINES = 5;
+    private static final long HOLD_MS = 1000L;
+    private static final long EXIT_HOLD_MS = 3000L;
+    private static final long DOUBLE_TAP_MS = 350L;
+    private static final long TAP_MAX_MS = 450L;
+
+    static final int C_TAP = 0;
+    static final int C_DOUBLE = 1;
+    static final int C_HOLD = 2;
+    static final int C_SWIPE_FWD = 3;
+    static final int C_SWIPE_BACK = 4;
+    static final int C_SWIPE_VERT = 5;
+    static final int C_WHEEL = 6;
+    static final int C_OK = 7;
+    static final int C_CAMERA = 8;
+    static final int C_BROADCAST = 9;
+    static final int C_LOST = 10;
+    static final String[] CHECK_NAMES = {
+            "Тап по дужке",
+            "Двойной тап",
+            "Удержание пальца 1 с",
+            "Свайп вперёд (→)",
+            "Свайп назад (←)",
+            "Свайп вверх/вниз",
+            "Колесо / стрелки",
+            "Клавиша ОК (Enter)",
+            "Клавиша камеры",
+            "Сигнал кнопки очков",
+            "Сработала системная камера",
+    };
+
     private static final String[] BROADCASTS = {
             "com.android.action.ACTION_SPRITE_BUTTON_DOWN",
             "com.android.action.ACTION_SPRITE_BUTTON_UP",
@@ -39,11 +88,55 @@ public final class MainActivity extends Activity {
             "com.rokid.glass3.action.button.LONG_PRESS",
     };
 
-    private final ArrayDeque<String> lines = new ArrayDeque<>();
-    private TextView text;
-    private long lastBackAt = -1L;
+    private final Handler handler = new Handler();
+    private final ArrayDeque<String> logLines = new ArrayDeque<>();
+    private final StringBuilder fullLog = new StringBuilder();
+    private final int[] counts = new int[CHECK_NAMES.length];
+    private final String[] details = new String[CHECK_NAMES.length];
+
+    private LinearLayout panel;
+    private TextView banner;
+    private TextView lastView;
+    private TextView checksView;
+    private TextView logView;
     private int counter;
+    private boolean exiting;
+    private boolean pausedBySystem;
+
+    private float downX;
+    private float downY;
+    private long downAt;
+    private boolean moved;
+    private boolean holdFired;
+    private boolean tapPending;
     private long lastMoveLogAt;
+    private String touchDevice = "";
+
+    private final Runnable singleTap = new Runnable() {
+        @Override public void run() {
+            tapPending = false;
+            mark(C_TAP, "ТАП по дужке", "TOUCH " + touchDevice);
+        }
+    };
+
+    private final Runnable holdTick = new Runnable() {
+        @Override public void run() {
+            long held = SystemClock.elapsedRealtime() - downAt;
+            if (!holdFired && held >= HOLD_MS) {
+                holdFired = true;
+                mark(C_HOLD, null, "HOLD " + touchDevice);
+            }
+            if (held >= EXIT_HOLD_MS) {
+                exitWithReport();
+                return;
+            }
+            if (held >= HOLD_MS) {
+                long left = (EXIT_HOLD_MS - held + 999L) / 1000L;
+                showLast("УДЕРЖАНИЕ. Держите ещё " + left + " с — ВЫХОД\n(отпустите, чтобы остаться)");
+            }
+            handler.postDelayed(this, 200L);
+        }
+    };
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -54,24 +147,64 @@ public final class MainActivity extends Activity {
                     extras.append(' ').append(key).append('=').append(intent.getExtras().get(key));
                 }
             }
-            add("BC " + action.substring(action.lastIndexOf('.') + 1) + extras);
+            String shortName = action.substring(action.lastIndexOf('.') + 1);
+            mark(C_BROADCAST, "Кнопка очков: " + shortName, "BC " + shortName + extras);
         }
     };
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        text = new TextView(this);
-        text.setTextColor(Color.rgb(140, 255, 140));
-        text.setBackgroundColor(Color.BLACK);
-        text.setTypeface(Typeface.MONOSPACE);
-        text.setTextSize(13);
-        text.setGravity(Gravity.TOP | Gravity.START);
-        text.setPadding(16, 16, 16, 16);
-        setContentView(text);
-        add("Жмите кнопки, крутите колесо,");
-        add("тапайте/свайпайте по дужке.");
-        add("Выход: Назад 2 раза.");
+        int green = Color.rgb(140, 255, 140);
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+
+        // Content lives in the top ~75% of the HUD; the bottom edge is hard to see.
+        panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setBackgroundColor(Color.BLACK);
+        panel.setPadding(dp(8), dp(6), dp(8), dp(4));
+        root.addView(panel, new LinearLayout.LayoutParams(-1, 0, 3f));
+        root.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        banner = new TextView(this);
+        banner.setTextColor(Color.BLACK);
+        banner.setBackgroundColor(green);
+        banner.setTypeface(null, Typeface.BOLD);
+        banner.setTextSize(13);
+        banner.setGravity(Gravity.CENTER);
+        banner.setPadding(dp(6), dp(3), dp(6), dp(3));
+        banner.setText("ВЫХОД: держите палец на дужке 3 с\nКнопку и кольцо жмите по 1 разу!");
+        panel.addView(banner, new LinearLayout.LayoutParams(-1, -2));
+
+        lastView = new TextView(this);
+        lastView.setTextColor(Color.WHITE);
+        lastView.setTypeface(null, Typeface.BOLD);
+        lastView.setTextSize(16);
+        lastView.setGravity(Gravity.CENTER);
+        lastView.setPadding(0, dp(6), 0, dp(6));
+        lastView.setMinLines(2);
+        panel.addView(lastView, new LinearLayout.LayoutParams(-1, -2));
+
+        checksView = new TextView(this);
+        checksView.setTextColor(green);
+        checksView.setTypeface(Typeface.MONOSPACE);
+        checksView.setTextSize(11.5f);
+        panel.addView(checksView, new LinearLayout.LayoutParams(-1, -2));
+
+        logView = new TextView(this);
+        logView.setTextColor(Color.rgb(90, 170, 90));
+        logView.setTypeface(Typeface.MONOSPACE);
+        logView.setTextSize(9.5f);
+        logView.setPadding(0, dp(4), 0, 0);
+        panel.addView(logView, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        setContentView(root);
+        showLast("Делайте действия по одному.\n✓ = сигнал дошёл до приложения");
+        renderChecks();
+        log("старт " + Build.MODEL + " / " + Build.DISPLAY);
     }
 
     @Override protected void onResume() {
@@ -79,23 +212,74 @@ public final class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter();
         for (String action : BROADCASTS) filter.addAction(action);
         registerReceiver(receiver, filter);
+        if (pausedBySystem) {
+            pausedBySystem = false;
+            showLast("Система открывала свой экран\n(скорее всего, камеру). Вернулись.");
+        }
     }
 
     @Override protected void onPause() {
         try { unregisterReceiver(receiver); } catch (RuntimeException ignored) {}
+        cancelTouch();
+        if (!exiting && !isFinishing()) {
+            pausedBySystem = true;
+            mark(C_LOST, null, "приложение свернула система (onPause)");
+        }
         super.onPause();
     }
 
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        log(hasFocus ? "фокус вернулся" : "фокус потерян");
+    }
+
+    // ------------------------------------------------------------ keys
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        String act = event.getAction() == KeyEvent.ACTION_DOWN ? "↓"
-                : event.getAction() == KeyEvent.ACTION_UP ? "↑" : "m";
-        String name = KeyEvent.keyCodeToString(event.getKeyCode()).replace("KEYCODE_", "");
-        add(String.format(Locale.US, "KEY%s %s(%d) sc=%d r=%d %s", act, name, event.getKeyCode(),
-                event.getScanCode(), event.getRepeatCount(), device(event.getDevice())));
-        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-            long now = SystemClock.elapsedRealtime();
-            if (lastBackAt > 0L && now - lastBackAt < 1500L) finish();
-            lastBackAt = now;
+        int code = event.getKeyCode();
+        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+        String name = KeyEvent.keyCodeToString(code).replace("KEYCODE_", "");
+        String dev = device(event.getDevice());
+        String raw = String.format(Locale.US, "KEY%s %s(%d) sc=%d r=%d %s", down ? "↓" : "↑",
+                name, code, event.getScanCode(), event.getRepeatCount(), dev);
+        if (code == KeyEvent.KEYCODE_BACK) {
+            log(raw);
+            if (!down) exitWithReport();
+            return true;
+        }
+        if (!down || event.getRepeatCount() > 0) {
+            log(raw);
+            return true;
+        }
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            case KeyEvent.KEYCODE_PAGE_UP:
+            case KeyEvent.KEYCODE_PAGE_DOWN:
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_TAB:
+                mark(C_WHEEL, "Колесо/стрелка: " + name + "\n" + dev, raw);
+                break;
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_SPACE:
+                mark(C_OK, "Клавиша ОК: " + name + "\n" + dev, raw);
+                break;
+            case KeyEvent.KEYCODE_CAMERA:
+            case KeyEvent.KEYCODE_FOCUS:
+            case KeyEvent.KEYCODE_STEM_PRIMARY:
+                mark(C_CAMERA, "Клавиша камеры: " + name + "\n" + dev, raw);
+                break;
+            default:
+                showLast("Клавиша " + name + " (" + code + ")\n" + dev);
+                log(raw);
         }
         return true;
     }
@@ -109,20 +293,121 @@ public final class MainActivity extends Activity {
             if (v != 0f) axes.append(' ').append(MotionEvent.axisToString(id).replace("AXIS_", ""))
                     .append('=').append(String.format(Locale.US, "%.1f", v));
         }
-        add("GEN " + MotionEvent.actionToString(event.getActionMasked()).replace("ACTION_", "")
-                + axes + " " + device(event.getDevice()));
+        String act = MotionEvent.actionToString(event.getActionMasked()).replace("ACTION_", "");
+        String dev = device(event.getDevice());
+        String raw = "GEN " + act + axes + " " + dev;
+        if (event.getActionMasked() == MotionEvent.ACTION_SCROLL) {
+            float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+            if (v == 0f) v = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
+            mark(C_WHEEL, "Прокрутка " + (v > 0 ? "▲" : "▼") + "\n" + dev, raw);
+        } else {
+            log(raw);
+        }
         return true;
     }
+
+    // ------------------------------------------------------------ touch
 
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         int action = event.getActionMasked();
         long now = SystemClock.elapsedRealtime();
-        if (action == MotionEvent.ACTION_MOVE && now - lastMoveLogAt < 250L) return true;
-        if (action == MotionEvent.ACTION_MOVE) lastMoveLogAt = now;
-        add(String.format(Locale.US, "TOUCH %s x=%.0f y=%.0f %s",
-                MotionEvent.actionToString(action).replace("ACTION_", ""),
-                event.getX(), event.getY(), device(event.getDevice())));
+        float slop = dp(20);
+        touchDevice = device(event.getDevice());
+        if (action == MotionEvent.ACTION_DOWN) {
+            downX = event.getX();
+            downY = event.getY();
+            downAt = now;
+            moved = false;
+            holdFired = false;
+            handler.removeCallbacks(holdTick);
+            handler.postDelayed(holdTick, 200L);
+            log(String.format(Locale.US, "TOUCH DOWN x=%.0f y=%.0f %s", downX, downY, touchDevice));
+        } else if (action == MotionEvent.ACTION_MOVE) {
+            if (!moved && (Math.abs(event.getX() - downX) > slop || Math.abs(event.getY() - downY) > slop)) {
+                moved = true;
+                handler.removeCallbacks(holdTick);
+            }
+            if (now - lastMoveLogAt > 300L) {
+                lastMoveLogAt = now;
+                log(String.format(Locale.US, "TOUCH MOVE x=%.0f y=%.0f", event.getX(), event.getY()));
+            }
+        } else if (action == MotionEvent.ACTION_UP) {
+            handler.removeCallbacks(holdTick);
+            float dx = event.getX() - downX;
+            float dy = event.getY() - downY;
+            log(String.format(Locale.US, "TOUCH UP dx=%.0f dy=%.0f %d мс", dx, dy, now - downAt));
+            if (holdFired) {
+                showLast("Отпустили — остаёмся в тесте");
+            } else if (Math.abs(dx) > dp(40) && Math.abs(dx) >= Math.abs(dy)) {
+                cancelTap();
+                if (dx > 0) mark(C_SWIPE_FWD, "СВАЙП → (X+)", String.format(Locale.US, "swipe dx=%.0f", dx));
+                else mark(C_SWIPE_BACK, "СВАЙП ← (X−)", String.format(Locale.US, "swipe dx=%.0f", dx));
+            } else if (Math.abs(dy) > dp(40)) {
+                cancelTap();
+                mark(C_SWIPE_VERT, dy > 0 ? "СВАЙП ↓ (Y+)" : "СВАЙП ↑ (Y−)",
+                        String.format(Locale.US, "swipe dy=%.0f", dy));
+            } else if (!moved && now - downAt <= TAP_MAX_MS) {
+                if (tapPending) {
+                    cancelTap();
+                    mark(C_DOUBLE, "ДВОЙНОЙ ТАП", "TOUCH " + touchDevice);
+                } else {
+                    tapPending = true;
+                    handler.postDelayed(singleTap, DOUBLE_TAP_MS);
+                }
+            }
+        } else if (action == MotionEvent.ACTION_CANCEL) {
+            handler.removeCallbacks(holdTick);
+            log("TOUCH CANCEL");
+        }
         return true;
+    }
+
+    private void cancelTap() {
+        tapPending = false;
+        handler.removeCallbacks(singleTap);
+    }
+
+    private void cancelTouch() {
+        cancelTap();
+        handler.removeCallbacks(holdTick);
+    }
+
+    // ------------------------------------------------------------ output
+
+    private void mark(int check, String headline, String raw) {
+        counts[check]++;
+        details[check] = raw;
+        if (headline != null) showLast(headline);
+        log(raw);
+        renderChecks();
+    }
+
+    private void showLast(String message) {
+        lastView.setText(message);
+    }
+
+    private void renderChecks() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < CHECK_NAMES.length; i++) {
+            boolean seen = counts[i] > 0;
+            sb.append(seen ? "✓ " : "○ ").append(CHECK_NAMES[i]);
+            if (seen) sb.append(" ×").append(counts[i]);
+            if (i < CHECK_NAMES.length - 1) sb.append('\n');
+        }
+        checksView.setText(sb.toString());
+    }
+
+    private void log(String line) {
+        Log.i(TAG, line);
+        counter++;
+        String stamped = counter + " " + line;
+        fullLog.append(new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date()))
+                .append(' ').append(stamped).append('\n');
+        logLines.addLast(stamped);
+        while (logLines.size() > LOG_LINES) logLines.removeFirst();
+        StringBuilder sb = new StringBuilder();
+        for (String l : logLines) sb.append(l).append('\n');
+        logView.setText(sb.toString());
     }
 
     private static String device(InputDevice device) {
@@ -130,13 +415,69 @@ public final class MainActivity extends Activity {
         return "[" + device.getName() + "]";
     }
 
-    private void add(String line) {
-        Log.i(TAG, line);
-        counter++;
-        lines.addLast(counter + " " + line);
-        while (lines.size() > MAX_LINES) lines.removeFirst();
-        StringBuilder sb = new StringBuilder();
-        for (String l : lines) sb.append(l).append('\n');
-        runOnUiThread(() -> text.setText(sb.toString()));
+    // ------------------------------------------------------------ exit + report
+
+    private void exitWithReport() {
+        if (exiting) return;
+        exiting = true;
+        cancelTouch();
+        showLast("Сохраняю отчёт и выхожу…");
+        banner.setText("Тест кнопок и кольца — отчёт");
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+                saveSnapshot(stamp);
+                saveTextLog(stamp);
+                finish();
+            }
+        }, 150L);
+    }
+
+    private void saveSnapshot(String stamp) {
+        try {
+            View v = panel;
+            if (v.getWidth() == 0 || v.getHeight() == 0) return;
+            Bitmap bitmap = Bitmap.createBitmap(v.getWidth(), v.getHeight(), Bitmap.Config.ARGB_8888);
+            v.draw(new Canvas(bitmap));
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, "InputTest_" + stamp + ".png");
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera");
+            Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return;
+            try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                if (out != null) bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            }
+            bitmap.recycle();
+        } catch (Exception error) {
+            Log.w(TAG, "Could not save snapshot", error);
+        }
+    }
+
+    private void saveTextLog(String stamp) {
+        try {
+            StringBuilder report = new StringBuilder("Тест кнопок и кольца ").append(stamp).append('\n');
+            for (int i = 0; i < CHECK_NAMES.length; i++) {
+                report.append(counts[i] > 0 ? "[x] " : "[ ] ").append(CHECK_NAMES[i])
+                        .append(" ×").append(counts[i]);
+                if (details[i] != null) report.append("  — ").append(details[i]);
+                report.append('\n');
+            }
+            report.append("\nЖурнал:\n").append(fullLog);
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, "InputTest_" + stamp + ".txt");
+            values.put(MediaStore.Downloads.MIME_TYPE, "text/plain");
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return;
+            try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                if (out != null) out.write(report.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Could not save text log", error);
+        }
+    }
+
+    private int dp(float value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 }
