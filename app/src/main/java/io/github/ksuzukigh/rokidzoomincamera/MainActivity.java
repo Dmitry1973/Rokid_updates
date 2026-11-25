@@ -79,8 +79,6 @@ public final class MainActivity extends Activity {
     private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 3f, 4f};
     private static final String[] ACTIONS = {"Настройки фото и видео", "Записать видео", "Справка", "Выйти из приложения", "Отмена"};
     private static final int ACT_SETTINGS = 0, ACT_VIDEO = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
-    /** Hold on the temple arrives only as NOTIFICATION with no key after it. */
-    private static final long HOLD_AS_NOTIFICATION_MS = 1000L;
     private static final String BUTTON_DOWN = "com.android.action.ACTION_SPRITE_BUTTON_DOWN";
     private static final String BUTTON_UP = "com.android.action.ACTION_SPRITE_BUTTON_UP";
     private static final String BUTTON_LONG = "com.android.action.ACTION_SPRITE_BUTTON_LONG_PRESS";
@@ -99,7 +97,7 @@ public final class MainActivity extends Activity {
             "УПРАВЛЕНИЕ\n" +
             "Тап по дужке / ОК кольца — фото\n" +
             "Свайп по дужке или колесо — зум\n  (1 движение = 1 шаг)\n" +
-            "Держать палец 1 с или «Назад» — МЕНЮ:\n" +
+            "Нажать колесо кольца или «Назад» — МЕНЮ:\n" +
             "  настройки, видео, справка, выход\n" +
             "  свайп/колесо — выбрать, ОК — выполнить\n" +
             "«Назад» в меню — выйти из приложения\n" +
@@ -157,6 +155,7 @@ public final class MainActivity extends Activity {
     private int photoQuality = 95;
     private boolean recording;
     private int recordingFps = 30;
+    private long suppressEnterUntil;
     private int[] recordingSize;
     private volatile String lastFileInfo;
     private boolean recorderStarted;
@@ -215,9 +214,6 @@ public final class MainActivity extends Activity {
     };
     private final Runnable refreshOverlay = new Runnable() {
         @Override public void run() { updateOverlay(); }
-    };
-    private final Runnable holdFromKeys = new Runnable() {
-        @Override public void run() { onTouchLongPress(); }
     };
     private final Runnable touchLongPress = new Runnable() {
         @Override public void run() {
@@ -961,7 +957,7 @@ public final class MainActivity extends Activity {
         if (recording) {
             hintLabel.setText("ЗАПИСЬ · тап: стоп · свайп/колесо: зум");
         } else if (options.tapShutter) {
-            hintLabel.setText("тап: фото · свайп: зум\nдержать палец 1 с или «Назад»: МЕНЮ");
+            hintLabel.setText("тап / прав. кнопка: фото · колесо: зум\nнажать колесо или «Назад»: МЕНЮ");
         } else {
             hintLabel.setText("съёмка тапом выкл · колесо: зум\n«Назад»: меню");
         }
@@ -1521,7 +1517,6 @@ public final class MainActivity extends Activity {
 
     private void cancelTouchCallbacks() {
         mainHandler.removeCallbacks(touchLongPress);
-        mainHandler.removeCallbacks(holdFromKeys);
     }
 
     /** Single tap. No double tap anywhere: the system takes it. */
@@ -1539,6 +1534,12 @@ public final class MainActivity extends Activity {
         } else {
             setStatus("Съёмка тапом выключена (меню)");
         }
+    }
+
+    /** Ring wheel press: opens the menu; inside menus works as OK; stops a recording. */
+    private void onRingWheelPress() {
+        if (helpOpen || actionsOpen || settingsOpen || recording) onTap();
+        else openActions();
     }
 
     private void onTouchLongPress() {
@@ -1615,15 +1616,9 @@ public final class MainActivity extends Activity {
         Log.d(TAG, "onKeyDown key=" + KeyEvent.keyCodeToString(keyCode) + " repeat=" + event.getRepeatCount());
         if (keyCode == KeyEvent.KEYCODE_NOTIFICATION) {
             lastTouchEventAt = SystemClock.elapsedRealtime();
-            // Every temple gesture starts with NOTIFICATION; a tap/swipe is followed
-            // by ENTER/DPAD quickly. If nothing follows, the finger is being held.
-            if (event.getRepeatCount() == 0) {
-                mainHandler.removeCallbacks(holdFromKeys);
-                mainHandler.postDelayed(holdFromKeys, HOLD_AS_NOTIFICATION_MS);
-            }
+            // Every temple/ring gesture starts with NOTIFICATION; nothing to do with it.
             return true;
         }
-        mainHandler.removeCallbacks(holdFromKeys);
         // Measured on RV101 (test 1.3): one swipe forward on the temple, or one
         // wheel step forward, sends DPAD_RIGHT + DPAD_DOWN; backward sends
         // DPAD_LEFT + DPAD_UP. So RIGHT/DOWN = +1 and LEFT/UP = -1 (the old
@@ -1638,8 +1633,17 @@ public final class MainActivity extends Activity {
             if (event.getRepeatCount() == 0) onKeyStep(-1);
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+            // Pressing the ring wheel sends MEDIA_PLAY_PAUSE + ENTER (test 1.3); the
+            // right ring button and a temple tap send ENTER only. So PLAY_PAUSE is
+            // the ring's own "menu / OK" key; swallow the ENTER that comes with it.
+            if (event.getRepeatCount() == 0) {
+                suppressEnterUntil = SystemClock.elapsedRealtime() + 500L;
+                onRingWheelPress();
+            }
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_CAMERA || keyCode == KeyEvent.KEYCODE_STEM_PRIMARY) {
@@ -1657,6 +1661,10 @@ public final class MainActivity extends Activity {
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
         Log.d(TAG, "onKeyUp key=" + KeyEvent.keyCodeToString(keyCode) + " longHandled=" + longPressHandled);
         if (keyCode == KeyEvent.KEYCODE_NOTIFICATION || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return true;
+        if ((keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)
+                && SystemClock.elapsedRealtime() < suppressEnterUntil) {
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             // Some touch surfaces / the ring report a tap only as a key. If no touch
             // event was seen just now, treat the key as a tap.
