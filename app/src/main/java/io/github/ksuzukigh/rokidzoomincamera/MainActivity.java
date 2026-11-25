@@ -96,16 +96,16 @@ public final class MainActivity extends Activity {
     static final String HELP_TEXT =
             "УПРАВЛЕНИЕ\n" +
             "Тап по дужке / ОК кольца — фото\n" +
-            "Колесо кольца — зум (1 щелчок = 1 шаг)\n" +
+            "Свайп по дужке или колесо — зум\n  (1 движение = 1 шаг)\n" +
             "«Назад» — МЕНЮ:\n" +
             "  видео, настройки, справка, выход\n" +
-            "  колесо — выбрать, ОК — выполнить\n" +
+            "  свайп/колесо — выбрать, ОК — выполнить\n" +
             "«Назад» в меню — выйти из приложения\n" +
             "Во время записи: ОК — стоп\n" +
             "\n" +
             "В НАСТРОЙКАХ\n" +
             "ОК — следующий пункт\n" +
-            "Колесо — изменить\n" +
+            "Свайп/колесо — изменить\n" +
             "«Назад» — сохранить и выйти\n" +
             "\n" +
             "Кнопку очков и кнопку камеры\n" +
@@ -919,7 +919,7 @@ public final class MainActivity extends Activity {
         if (recording) {
             hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: ОК / тап");
         } else if (options.tapShutter) {
-            hintLabel.setText("ОК/тап: фото · колесо: зум\n«Назад»: меню · ещё раз: выход");
+            hintLabel.setText("тап/ОК: фото · свайп/колесо: зум\n«Назад»: меню · ещё раз: выход");
         } else {
             hintLabel.setText("съёмка тапом выкл · колесо: зум\n«Назад»: меню");
         }
@@ -1445,6 +1445,7 @@ public final class MainActivity extends Activity {
 
     /** Ring wheel / DPAD / volume keys: filtered so one click = one step. */
     private void onKeyStep(int direction) {
+        if (options.swipeReversed) direction = -direction;
         if (arbiter.acceptKey(SystemClock.elapsedRealtime())) onStep(direction);
     }
 
@@ -1553,17 +1554,22 @@ public final class MainActivity extends Activity {
             lastTouchEventAt = SystemClock.elapsedRealtime();
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+        // Measured on RV101 (test 1.3): one swipe forward on the temple, or one
+        // wheel step forward, sends DPAD_RIGHT + DPAD_DOWN; backward sends
+        // DPAD_LEFT + DPAD_UP. So RIGHT/DOWN = +1 and LEFT/UP = -1 (the old
+        // RIGHT/UP mapping made each swipe cancel itself: the zoom "dance").
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
             if (event.getRepeatCount() == 0) onKeyStep(1);
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
             if (event.getRepeatCount() == 0) onKeyStep(-1);
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
+        if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_CAMERA || keyCode == KeyEvent.KEYCODE_STEM_PRIMARY) {
@@ -1580,7 +1586,7 @@ public final class MainActivity extends Activity {
 
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
         Log.d(TAG, "onKeyUp key=" + KeyEvent.keyCodeToString(keyCode) + " longHandled=" + longPressHandled);
-        if (keyCode == KeyEvent.KEYCODE_NOTIFICATION) return true;
+        if (keyCode == KeyEvent.KEYCODE_NOTIFICATION || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return true;
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             // Some touch surfaces / the ring report a tap only as a key. If no touch
             // event was seen just now, treat the key as a tap.

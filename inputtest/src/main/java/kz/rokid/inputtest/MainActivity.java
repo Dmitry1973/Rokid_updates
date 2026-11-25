@@ -46,9 +46,9 @@ import java.util.Locale;
 public final class MainActivity extends Activity {
     private static final String TAG = "RokidInputTest";
     private static final long INTRO_MS = 5000L;
-    private static final long WAIT_FIRST_MS = 8000L;
+    private static final long WAIT_FIRST_MS = 20000L;
     private static final long COLLECT_AFTER_FIRST_MS = 2500L;
-    private static final long AFTER_RESUME_MS = 1500L;
+    private static final long AFTER_RESUME_MS = 3000L;
 
     static final String[] STEPS = {
             "ТАП по дужке (1 раз)",
@@ -59,8 +59,8 @@ public final class MainActivity extends Activity {
             "Колесо кольца: 1 щелчок ВПЕРЁД",
             "Колесо кольца: 1 щелчок НАЗАД",
             "Нажать колесо кольца (ОК)",
-            "Кнопка КАМЕРЫ на кольце, 1 раз\n(откроется системная камера)",
-            "Кнопка НА ОЧКАХ, 1 раз\n(откроется системная камера)",
+            "Кнопка КАМЕРЫ на кольце, 1 раз.\nСистемная камера сделает фото —\nэто нормально, вернитесь сюда",
+            "Кнопка НА ОЧКАХ, 1 раз.\nСистемная камера сделает фото —\nэто нормально, вернитесь сюда",
     };
     static final String[] SHORT = {
             "Тап", "2× тап", "Свайп вперёд", "Свайп назад", "Держать",
@@ -92,12 +92,19 @@ public final class MainActivity extends Activity {
     private boolean exiting;
     private boolean finished;
     private boolean pausedBySystem;
+    private boolean paused;
+    private long pausedAt;
     private long[] backTimes = {-10000L, -10000L, -10000L};
     private int backIndex;
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (exiting) return;
+            if (paused) {
+                // System camera (or anything else) is on top: freeze the step.
+                handler.postDelayed(this, 200L);
+                return;
+            }
             long now = SystemClock.elapsedRealtime();
             if (step < 0) {
                 long left = INTRO_MS - (now - stepStartedAt);
@@ -113,8 +120,9 @@ public final class MainActivity extends Activity {
                     if (step + 1 < STEPS.length) startStep(step + 1);
                     else finishWizard();
                 } else {
-                    timerView.setText(firstEventAt > 0 ? "Принято, дальше через " + ((left + 999) / 1000) + " с"
-                            : "Жду " + ((left + 999) / 1000) + " с…");
+                    timerView.setText(firstEventAt > 0
+                            ? "Записано: " + results[step] + "\nдальше через " + ((left + 999) / 1000) + " с"
+                            : (left > 10000L ? "Жду сигнал…" : "Нет сигнала, пропуск через " + ((left + 999) / 1000) + " с"));
                 }
             }
             handler.postDelayed(this, 200L);
@@ -154,7 +162,7 @@ public final class MainActivity extends Activity {
         banner.setTextSize(12);
         banner.setGravity(Gravity.CENTER);
         banner.setPadding(dp(6), dp(3), dp(6), dp(3));
-        banner.setText("Делайте то, что написано. Шаги идут сами.\nВыход: «Назад» 3 раза подряд");
+        banner.setText("Делайте то, что написано, ОДИН раз.\nСледующий шаг — после сигнала. Выход: «Назад» ×3");
         panel.addView(banner, new LinearLayout.LayoutParams(-1, -2));
 
         stepView = new TextView(this);
@@ -192,19 +200,25 @@ public final class MainActivity extends Activity {
         IntentFilter filter = new IntentFilter();
         for (String action : BROADCASTS) filter.addAction(action);
         registerReceiver(receiver, filter);
-        if (pausedBySystem) {
-            pausedBySystem = false;
-            // Give the user a moment after returning from the system camera.
+        if (paused) {
+            paused = false;
+            long now = SystemClock.elapsedRealtime();
+            stepStartedAt += now - pausedAt;
+            // Give the user a few seconds after returning from the system camera
+            // before moving to the next step.
             if (step >= 0 && !finished && firstEventAt > 0) {
-                firstEventAt = SystemClock.elapsedRealtime() - COLLECT_AFTER_FIRST_MS + AFTER_RESUME_MS;
+                firstEventAt = now - COLLECT_AFTER_FIRST_MS + AFTER_RESUME_MS;
             }
         }
+        pausedBySystem = false;
     }
 
     @Override protected void onPause() {
         try { unregisterReceiver(receiver); } catch (RuntimeException ignored) {}
         if (!exiting && !isFinishing()) {
             pausedBySystem = true;
+            paused = true;
+            pausedAt = SystemClock.elapsedRealtime();
             record("СИСТЕМА", "app paused by the system");
         }
         super.onPause();
