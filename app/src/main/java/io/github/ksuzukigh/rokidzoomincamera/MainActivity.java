@@ -95,24 +95,24 @@ public final class MainActivity extends Activity {
 
     static final String HELP_TEXT =
             "УПРАВЛЕНИЕ\n" +
-            "Тап по дужке — фото\n" +
-            "Свайп вперёд/назад — зум (1 свайп = 1 шаг)\n" +
+            "Тап по дужке / ОК кольца — фото\n" +
             "Колесо кольца — зум (1 щелчок = 1 шаг)\n" +
-            "Держать палец 1 с — МЕНЮ:\n" +
+            "«Назад» — МЕНЮ:\n" +
             "  видео, настройки, справка, выход\n" +
-            "  (свайп/колесо — выбрать, тап — ОК)\n" +
-            "Во время записи: тап — стоп\n" +
+            "  колесо — выбрать, ОК — выполнить\n" +
+            "«Назад» в меню — выйти из приложения\n" +
+            "Во время записи: ОК — стоп\n" +
             "\n" +
             "В НАСТРОЙКАХ\n" +
-            "Тап — следующий пункт\n" +
-            "Свайп или колесо — изменить\n" +
-            "Держать 1 с — выйти\n" +
+            "ОК — следующий пункт\n" +
+            "Колесо — изменить\n" +
+            "«Назад» — сохранить и выйти\n" +
             "\n" +
-            "Двойной тап не используется:\n" +
-            "его забирает система.\n" +
-            "Кнопку очков/кольца не жать.\n" +
+            "Кнопку очков и кнопку камеры\n" +
+            "на кольце не жать: их забирает\n" +
+            "системная камера.\n" +
             "\n" +
-            "Тап — закрыть справку";
+            "ОК — закрыть справку";
 
     private final Handler mainHandler = new Handler();
     private final CaptureOptions options = new CaptureOptions();
@@ -524,19 +524,28 @@ public final class MainActivity extends Activity {
         super.onUserLeaveHint();
     }
 
+    /**
+     * On RV101 the temple sends Back (no touch events reach apps), so Back is
+     * the menu key: main screen → menu; menu → leave the app; settings/help → main.
+     */
     @Override public void onBackPressed() {
         if (helpOpen) {
             closeHelp();
-            return;
-        }
-        if (actionsOpen) {
-            closeActions();
             return;
         }
         if (settingsOpen) {
             closeSettings();
             return;
         }
+        if (recording) {
+            stopVideo();
+            return;
+        }
+        if (!actionsOpen) {
+            openActions();
+            return;
+        }
+        closeActions();
         userLeaving = true;
         videoStartPending = false;
         super.onBackPressed();
@@ -908,11 +917,11 @@ public final class MainActivity extends Activity {
         }
         hintLabel.setVisibility(View.VISIBLE);
         if (recording) {
-            hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: тап");
+            hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: ОК / тап");
         } else if (options.tapShutter) {
-            hintLabel.setText("тап: фото · свайп: зум\nдержать 1 с: меню (видео, выход)");
+            hintLabel.setText("ОК/тап: фото · колесо: зум\n«Назад»: меню · ещё раз: выход");
         } else {
-            hintLabel.setText("съёмка тапом выкл · свайп: зум\nдержать 1 с: меню");
+            hintLabel.setText("съёмка тапом выкл · колесо: зум\n«Назад»: меню");
         }
     }
 
@@ -1324,10 +1333,10 @@ public final class MainActivity extends Activity {
         }
         sb.append("Фото получится: ").append(expectedPhotoSize()).append('\n');
         if (CaptureOptions.isAction(settingsItem)) {
-            sb.append("тап: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
-                    .append(" · свайп: дальше");
+            sb.append("ОК: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
+                    .append(" · колесо: дальше");
         } else {
-            sb.append("свайп/колесо: изменить\nтап: след. пункт · держать: выход");
+            sb.append("колесо: изменить · ОК: след. пункт\n«Назад»: сохранить и выйти");
         }
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
@@ -1376,7 +1385,7 @@ public final class MainActivity extends Activity {
             showSettings();
         } else {
             updateHint();
-            setStatus("Справка: держать 1 с → «Справка»");
+            setStatus("Справка: «Назад» → «Справка»");
         }
     }
 
@@ -1504,7 +1513,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < ACTIONS.length; i++) {
             sb.append(i == actionItem ? "▶ " : "  ").append(ACTIONS[i]).append('\n');
         }
-        sb.append("свайп/колесо: выбрать · тап: ОК\nдержать: закрыть");
+        sb.append("колесо: выбрать · ОК: выполнить\n«Назад» ещё раз: выйти из приложения");
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
     }
