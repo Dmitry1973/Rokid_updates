@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">ZOOM Камера RU</string>
+    <string name="safety_channel">Управление кнопкой камеры</string>
+    <string name="safety_notification">ZOOM Камера управляет кнопкой</string>
+</resources>

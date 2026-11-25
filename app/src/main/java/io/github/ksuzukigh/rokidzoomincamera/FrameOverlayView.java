@@ -1,0 +1,102 @@
+package io.github.ksuzukigh.rokidzoomincamera;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.DashPathEffect;
+import android.graphics.Paint;
+import android.view.View;
+
+/**
+ * Draws the centre reticle and the area that will end up in the file:
+ * a solid rectangle for the photo frame (when it is not the full 4:3 frame)
+ * and corner brackets for the video frame.
+ */
+final class FrameOverlayView extends View {
+    private final Paint reticlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint photoPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint videoPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float boxLeft;
+    private float boxTop;
+    private float boxWidth;
+    private float boxHeight;
+    private float previewAspect = 4f / 3f;
+    private float photoAspect = 4f / 3f;
+    private float videoAspect = 16f / 9f;
+    private boolean recording;
+
+    FrameOverlayView(Context context) {
+        super(context);
+        setClickable(false);
+        float density = getResources().getDisplayMetrics().density;
+        reticlePaint.setColor(Color.argb(190, 255, 255, 255));
+        reticlePaint.setStyle(Paint.Style.STROKE);
+        reticlePaint.setStrokeWidth(2f * density);
+        photoPaint.setColor(Color.argb(200, 140, 255, 140));
+        photoPaint.setStyle(Paint.Style.STROKE);
+        photoPaint.setStrokeWidth(2f * density);
+        photoPaint.setPathEffect(new DashPathEffect(new float[]{10f * density, 6f * density}, 0f));
+        videoPaint.setColor(Color.argb(230, 255, 255, 255));
+        videoPaint.setStyle(Paint.Style.STROKE);
+        videoPaint.setStrokeWidth(3f * density);
+    }
+
+    /** Bounds of the full camera image in this view's coordinates. */
+    void setPreviewBounds(float left, float top, float width, float height, float aspect) {
+        boxLeft = left;
+        boxTop = top;
+        boxWidth = width;
+        boxHeight = height;
+        previewAspect = Math.max(1f, aspect);
+        invalidate();
+    }
+
+    void setFrames(float photo, float video, boolean isRecording) {
+        photoAspect = photo;
+        videoAspect = video;
+        recording = isRecording;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas canvas) {
+        float density = getResources().getDisplayMetrics().density;
+        float cx = getWidth() / 2f;
+        float cy = getHeight() / 2f;
+        float gap = 8f * density;
+        float length = 22f * density;
+        canvas.drawLine(cx - length, cy, cx - gap, cy, reticlePaint);
+        canvas.drawLine(cx + gap, cy, cx + length, cy, reticlePaint);
+        canvas.drawLine(cx, cy - length, cx, cy - gap, reticlePaint);
+        canvas.drawLine(cx, cy + gap, cx, cy + length, reticlePaint);
+
+        if (boxWidth <= 0f || boxHeight <= 0f) return;
+        float inset = 3f * density;
+        if (!recording && Math.abs(photoAspect - previewAspect) > 0.02f) {
+            float[] r = clip(PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, photoAspect), inset);
+            canvas.drawRect(r[0], r[1], r[2], r[3], photoPaint);
+        }
+        if (recording || Math.abs(videoAspect - previewAspect) > 0.02f) {
+            float[] r = clip(PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, videoAspect), inset);
+            drawCorners(canvas, r, 26f * density);
+        }
+    }
+
+    private float[] clip(float[] r, float inset) {
+        return new float[]{
+                Math.max(r[0], inset), Math.max(r[1], inset),
+                Math.min(r[2], getWidth() - inset), Math.min(r[3], getHeight() - inset)
+        };
+    }
+
+    private void drawCorners(Canvas canvas, float[] r, float size) {
+        float l = r[0], t = r[1], rr = r[2], b = r[3];
+        canvas.drawLine(l, t, l + size, t, videoPaint);
+        canvas.drawLine(l, t, l, t + size, videoPaint);
+        canvas.drawLine(rr, t, rr - size, t, videoPaint);
+        canvas.drawLine(rr, t, rr, t + size, videoPaint);
+        canvas.drawLine(l, b, l + size, b, videoPaint);
+        canvas.drawLine(l, b, l, b - size, videoPaint);
+        canvas.drawLine(rr, b, rr - size, b, videoPaint);
+        canvas.drawLine(rr, b, rr, b - size, videoPaint);
+    }
+}

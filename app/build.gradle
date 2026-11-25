@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+def releaseKeystorePath = System.getenv('ROKID_RELEASE_KEYSTORE') ?:
+        System.getProperty('user.home') + '/rokid-release.jks'
+def releaseStorePassword = System.getenv('ROKID_STORE_PASSWORD')
+def releaseKeyPassword = System.getenv('ROKID_KEY_PASSWORD')
+
+android {
+    namespace 'io.github.ksuzukigh.rokidzoomincamera'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.ksuzukigh.rokidzoomincamera.ru'
+        minSdk 32
+        targetSdk 32
+        versionCode 200
+        versionName '2.0.0-ru'
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(releaseKeystorePath)
+            storePassword releaseStorePassword
+            keyAlias 'rokid'
+            keyPassword releaseKeyPassword
+        }
+    }
+
+    buildTypes {
+        release {
+            // Use your own keystore if ROKID_STORE_PASSWORD is set; otherwise sign
+            // with the debug key so the release APK still installs on the glasses.
+            signingConfig releaseStorePassword ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+        abortOnError false
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}
