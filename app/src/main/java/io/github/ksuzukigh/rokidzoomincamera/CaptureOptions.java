@@ -177,11 +177,11 @@ final class CaptureOptions {
 
     String itemName(int item) {
         switch (item) {
-            case ITEM_PHOTO_ASPECT: return "Формат фото";
-            case ITEM_PHOTO_SIZE: return "Размер фото";
+            case ITEM_PHOTO_ASPECT: return "Формат ФОТО";
+            case ITEM_PHOTO_SIZE: return "Размер ФОТО";
             case ITEM_JPEG_QUALITY: return "Качество JPEG";
-            case ITEM_VIDEO_SIZE: return "Разрешение видео";
-            case ITEM_FPS: return "Кадров в секунду";
+            case ITEM_VIDEO_SIZE: return "Разрешение ВИДЕО";
+            case ITEM_FPS: return "Кадров/с ВИДЕО";
             case ITEM_TAP_SHUTTER: return "Съёмка тапом";
             case ITEM_PREVIEW_SIZE: return "Размер картинки";
             case ITEM_PREVIEW_SHIFT: return "Высота картинки";

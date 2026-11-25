@@ -77,8 +77,10 @@ public final class MainActivity extends Activity {
     private static final long BUTTON_CONFLICT_WINDOW_MS = 4000L;
     private static final long STATUS_VISIBLE_MS = 4000L;
     private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 3f, 4f};
-    private static final String[] ACTIONS = {"Записать видео", "Настройки", "Справка", "Выйти из приложения", "Отмена"};
-    private static final int ACT_VIDEO = 0, ACT_SETTINGS = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
+    private static final String[] ACTIONS = {"Настройки фото и видео", "Записать видео", "Справка", "Выйти из приложения", "Отмена"};
+    private static final int ACT_SETTINGS = 0, ACT_VIDEO = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
+    /** Hold on the temple arrives only as NOTIFICATION with no key after it. */
+    private static final long HOLD_AS_NOTIFICATION_MS = 1000L;
     private static final String BUTTON_DOWN = "com.android.action.ACTION_SPRITE_BUTTON_DOWN";
     private static final String BUTTON_UP = "com.android.action.ACTION_SPRITE_BUTTON_UP";
     private static final String BUTTON_LONG = "com.android.action.ACTION_SPRITE_BUTTON_LONG_PRESS";
@@ -97,8 +99,8 @@ public final class MainActivity extends Activity {
             "УПРАВЛЕНИЕ\n" +
             "Тап по дужке / ОК кольца — фото\n" +
             "Свайп по дужке или колесо — зум\n  (1 движение = 1 шаг)\n" +
-            "«Назад» — МЕНЮ:\n" +
-            "  видео, настройки, справка, выход\n" +
+            "Держать палец 1 с или «Назад» — МЕНЮ:\n" +
+            "  настройки, видео, справка, выход\n" +
             "  свайп/колесо — выбрать, ОК — выполнить\n" +
             "«Назад» в меню — выйти из приложения\n" +
             "Во время записи: ОК — стоп\n" +
@@ -122,6 +124,7 @@ public final class MainActivity extends Activity {
     private FrameOverlayView overlay;
     private TextView zoomLabel;
     private TextView zoomBar;
+    private TextView photoInfo;
     private TextView zoomFlash;
     private TextView hintLabel;
     private TextView statusLabel;
@@ -209,6 +212,9 @@ public final class MainActivity extends Activity {
     };
     private final Runnable refreshOverlay = new Runnable() {
         @Override public void run() { updateOverlay(); }
+    };
+    private final Runnable holdFromKeys = new Runnable() {
+        @Override public void run() { onTouchLongPress(); }
     };
     private final Runnable touchLongPress = new Runnable() {
         @Override public void run() {
@@ -386,6 +392,13 @@ public final class MainActivity extends Activity {
         barParams.leftMargin = dp(12);
         barParams.topMargin = dp(42);
         root.addView(zoomBar, barParams);
+
+        // Current photo format and size, always visible (top right, under the battery).
+        photoInfo = hudText(12, GREEN, true);
+        FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        infoParams.topMargin = dp(42);
+        infoParams.rightMargin = dp(12);
+        root.addView(photoInfo, infoParams);
 
         batteryLabel = hudText(14, Color.WHITE, true);
         batteryLabel.setText(BatteryDisplay.label(-1, false));
@@ -902,9 +915,17 @@ public final class MainActivity extends Activity {
     private void updateZoomUi() {
         if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", ZOOM_STEPS[zoomIndex]));
         if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoomIndex, ZOOM_STEPS.length));
+        updatePhotoInfo();
+    }
+
+    private void updatePhotoInfo() {
+        if (photoInfo == null) return;
+        photoInfo.setText("ФОТО " + aspectLabel(options.photoAspect()) + " · " + expectedPhotoSize());
+        photoInfo.setVisibility(recording ? View.GONE : View.VISIBLE);
     }
 
     private void updateOverlay() {
+        updatePhotoInfo();
         if (overlay != null) overlay.setFrames(options.photoAspect(), options.videoAspect(), recording);
     }
 
@@ -919,7 +940,7 @@ public final class MainActivity extends Activity {
         if (recording) {
             hintLabel.setText("ИДЁТ ЗАПИСЬ · СТОП: ОК / тап");
         } else if (options.tapShutter) {
-            hintLabel.setText("тап/ОК: фото · свайп/колесо: зум\n«Назад»: меню · ещё раз: выход");
+            hintLabel.setText("тап: фото · свайп: зум\nдержать палец 1 с или «Назад»: МЕНЮ");
         } else {
             hintLabel.setText("съёмка тапом выкл · колесо: зум\n«Назад»: меню");
         }
@@ -1315,7 +1336,8 @@ public final class MainActivity extends Activity {
         menuPanel.setVisibility(View.GONE);
         updateOverlay();
         updateHint();
-        setStatus("Настройки сохранены");
+        updatePhotoInfo();
+        setStatus("Настройки сохранены: фото " + aspectLabel(options.photoAspect()) + " · " + expectedPhotoSize());
     }
 
     private void showSettings() {
@@ -1459,6 +1481,7 @@ public final class MainActivity extends Activity {
 
     private void cancelTouchCallbacks() {
         mainHandler.removeCallbacks(touchLongPress);
+        mainHandler.removeCallbacks(holdFromKeys);
     }
 
     /** Single tap. No double tap anywhere: the system takes it. */
@@ -1491,7 +1514,7 @@ public final class MainActivity extends Activity {
     private void openActions() {
         if (recording) return;
         actionsOpen = true;
-        actionItem = ACT_VIDEO;
+        actionItem = ACT_SETTINGS;
         statusLabel.setVisibility(View.GONE);
         showActions();
     }
@@ -1552,8 +1575,15 @@ public final class MainActivity extends Activity {
         Log.d(TAG, "onKeyDown key=" + KeyEvent.keyCodeToString(keyCode) + " repeat=" + event.getRepeatCount());
         if (keyCode == KeyEvent.KEYCODE_NOTIFICATION) {
             lastTouchEventAt = SystemClock.elapsedRealtime();
+            // Every temple gesture starts with NOTIFICATION; a tap/swipe is followed
+            // by ENTER/DPAD quickly. If nothing follows, the finger is being held.
+            if (event.getRepeatCount() == 0) {
+                mainHandler.removeCallbacks(holdFromKeys);
+                mainHandler.postDelayed(holdFromKeys, HOLD_AS_NOTIFICATION_MS);
+            }
             return true;
         }
+        mainHandler.removeCallbacks(holdFromKeys);
         // Measured on RV101 (test 1.3): one swipe forward on the temple, or one
         // wheel step forward, sends DPAD_RIGHT + DPAD_DOWN; backward sends
         // DPAD_LEFT + DPAD_UP. So RIGHT/DOWN = +1 and LEFT/UP = -1 (the old
