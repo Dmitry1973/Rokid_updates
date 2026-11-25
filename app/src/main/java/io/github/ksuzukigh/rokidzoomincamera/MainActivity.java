@@ -157,6 +157,8 @@ public final class MainActivity extends Activity {
     private int photoQuality = 95;
     private boolean recording;
     private int recordingFps = 30;
+    private int[] recordingSize;
+    private volatile String lastFileInfo;
     private boolean recorderStarted;
     private boolean stopVideoRequested;
     private boolean stopVideoScheduled;
@@ -235,6 +237,7 @@ public final class MainActivity extends Activity {
             if (!recording || !recorderStarted || recordingIndicator == null) return;
             long seconds = Math.max(0L, (SystemClock.elapsedRealtime() - videoStartedAt) / 1000L);
             recordingIndicator.setText(RecordingDisplay.label(seconds));
+            updatePhotoInfo();
             mainHandler.postDelayed(this, 1000L);
         }
     };
@@ -395,7 +398,7 @@ public final class MainActivity extends Activity {
         root.addView(zoomBar, barParams);
 
         // Current photo format and size, always visible (top right, under the battery).
-        photoInfo = hudText(12, GREEN, true);
+        photoInfo = hudText(11, GREEN, true);
         FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
         infoParams.topMargin = dp(42);
         infoParams.rightMargin = dp(12);
@@ -431,7 +434,7 @@ public final class MainActivity extends Activity {
         hintLabel.setBackground(box(120, dp(8)));
         hintLabel.setPadding(dp(6), dp(2), dp(6), dp(2));
         FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        hintParams.topMargin = dp(62);
+        hintParams.topMargin = dp(96);
         hintParams.leftMargin = dp(8);
         hintParams.rightMargin = dp(8);
         root.addView(hintLabel, hintParams);
@@ -442,7 +445,7 @@ public final class MainActivity extends Activity {
         statusLabel.setPadding(dp(10), dp(6), dp(10), dp(6));
         statusLabel.setBackground(box(170, dp(10)));
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        statusParams.topMargin = dp(92);
+        statusParams.topMargin = dp(128);
         statusParams.leftMargin = dp(8);
         statusParams.rightMargin = dp(8);
         root.addView(statusLabel, statusParams);
@@ -454,7 +457,7 @@ public final class MainActivity extends Activity {
         zoomFlash.setPadding(dp(18), dp(4), dp(18), dp(4));
         zoomFlash.setVisibility(View.GONE);
         FrameLayout.LayoutParams flashParams = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
-        flashParams.topMargin = dp(150);
+        flashParams.topMargin = dp(190);
         root.addView(zoomFlash, flashParams);
 
         // Settings menu: the whole list at once, selected line marked ▶.
@@ -921,8 +924,25 @@ public final class MainActivity extends Activity {
 
     private void updatePhotoInfo() {
         if (photoInfo == null) return;
-        photoInfo.setText("ФОТО " + aspectLabel(options.photoAspect()) + " · " + expectedPhotoSize());
-        photoInfo.setVisibility(recording ? View.GONE : View.VISIBLE);
+        StringBuilder sb = new StringBuilder();
+        int[] video = options.videoSize();
+        String videoLabel = video == null ? "—" : MediaLabels.video(video[0], video[1], options.fps());
+        if (recording) {
+            long bytes = -1L;
+            try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
+            int[] rec = recordingSize;
+            sb.append("REC ").append(rec == null ? videoLabel : MediaLabels.video(rec[0], rec[1], recordingFps));
+            if (bytes > 0) sb.append(" · ").append(MediaLabels.fileSize(bytes));
+        } else {
+            int[] dims = expectedPhotoDims();
+            sb.append("ФОТО ").append(aspectLabel(options.photoAspect())).append(" · ")
+                    .append(MediaLabels.megapixels(dims[0], dims[1]))
+                    .append("\nВИДЕО ").append(videoLabel);
+            if (lastFileInfo != null) sb.append("\nпосл.: ").append(lastFileInfo);
+        }
+        photoInfo.setText(sb.toString());
+        photoInfo.setGravity(Gravity.END);
+        photoInfo.setVisibility(View.VISIBLE);
     }
 
     private void updateOverlay() {
@@ -1038,8 +1058,15 @@ public final class MainActivity extends Activity {
             if (wanted && !result.cropped) {
                 message = "Сохранено БЕЗ зума — не хватило памяти";
             } else {
-                message = String.format(Locale.US, "✓ Фото %.1f× · %s\n%d×%d · JPEG %d%%",
-                        zoom, aspectLabel(aspect), result.width, result.height, quality);
+                lastFileInfo = String.format(Locale.US, "%s %s · %s",
+                        aspectLabel(aspect), MediaLabels.megapixels(result.width, result.height),
+                        MediaLabels.fileSize(result.jpeg.length));
+                message = String.format(Locale.US, "✓ Фото %.1f× · %s · %s\n%d×%d · JPEG %d%%",
+                        zoom, MediaLabels.megapixels(result.width, result.height),
+                        MediaLabels.fileSize(result.jpeg.length), result.width, result.height, quality);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() { updatePhotoInfo(); }
+                });
             }
         } catch (Exception error) {
             Log.e(TAG, "Could not save photo", error);
@@ -1063,13 +1090,17 @@ public final class MainActivity extends Activity {
 
     /** Size of the next photo with the current zoom/format/size settings. */
     private String expectedPhotoSize() {
+        int[] out = expectedPhotoDims();
+        return out[0] + "×" + out[1];
+    }
+
+    private int[] expectedPhotoDims() {
         int w = photoSize == null ? 4032 : Math.max(photoSize.getWidth(), photoSize.getHeight());
         int h = photoSize == null ? 3024 : Math.min(photoSize.getWidth(), photoSize.getHeight());
         int[] crop = PhotoCrop.crop(w, h, effectiveZoom(), options.photoAspect());
         int cw = crop == null ? w : crop[2] - crop[0];
         int ch = crop == null ? h : crop[3] - crop[1];
-        int[] out = PhotoCrop.limitSize(cw, ch, options.photoMaxLongSide());
-        return out[0] + "×" + out[1];
+        return PhotoCrop.limitSize(cw, ch, options.photoMaxLongSide());
     }
 
     // ---------------------------------------------------------------- video
@@ -1093,6 +1124,7 @@ public final class MainActivity extends Activity {
         }
         final int fps = options.fps();
         recordingFps = fps;
+        recordingSize = size;
         videoStartPending = false;
         recording = true;
         recorderStarted = false;
@@ -1156,8 +1188,7 @@ public final class MainActivity extends Activity {
                                 recordingIndicator.setVisibility(View.VISIBLE);
                                 mainHandler.removeCallbacks(updateRecordingClock);
                                 mainHandler.post(updateRecordingClock);
-                                setStatus(String.format(Locale.US, "Запись %d×%d · %d к/с",
-                                        size[0], size[1], fps));
+                                setStatus("Запись " + MediaLabels.video(size[0], size[1], fps));
                                 if (stopVideoRequested) stopVideo();
                             }
                         });
@@ -1203,6 +1234,7 @@ public final class MainActivity extends Activity {
         recorderStarted = false;
         stopVideoRequested = false;
         boolean saved = false;
+        long seconds = Math.max(0L, (SystemClock.elapsedRealtime() - videoStartedAt) / 1000L);
         try {
             if (recorder != null) {
                 recorder.stop();
@@ -1211,6 +1243,12 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException error) {
             Log.w(TAG, "Video was too short or could not stop", error);
         }
+        long bytes = -1L;
+        try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
+        if (saved && recordingSize != null) {
+            lastFileInfo = MediaLabels.video(recordingSize[0], recordingSize[1], recordingFps)
+                    + " · " + MediaLabels.fileSize(bytes) + " · " + RecordingDisplay.label(seconds).replace("● ЗАПИСЬ ", "");
+        }
         releaseRecorder(saved);
         releaseRecordingWakeLock();
         releaseDisplayWakeLock();
@@ -1218,7 +1256,7 @@ public final class MainActivity extends Activity {
         recordingIndicator.setVisibility(View.GONE);
         updateOverlay();
         updateHint();
-        setStatus(saved ? "✓ Видео сохранено" : "Не удалось сохранить видео");
+        setStatus(saved ? "✓ Видео " + lastFileInfo : "Не удалось сохранить видео");
         returnToPreviewLater();
     }
 
