@@ -94,24 +94,24 @@ public final class MainActivity extends Activity {
     };
 
     static final String HELP_TEXT =
-            "УПРАВЛЕНИЕ\n" +
-            "Фото — правая кнопка кольца\n  или тап по дужке\n" +
-            "Зум — крутить колесо кольца\n  или свайп по дужке (1 щелчок = 1 шаг)\n" +
-            "МЕНЮ — нажать на колесо кольца\n  (или «Назад»)\n" +
-            "В меню: крутить колесо — выбрать,\n  нажать колесо — выполнить\n" +
+            "КОЛЬЦО (как мышь)\n" +
+            "Нажать колесо — фото / ОК\n" +
+            "Крутить колесо — зум / выбор\n" +
+            "Правая кнопка — меню и настройки,\n  в меню — назад\n" +
+            "Запись: колесо — стоп, крутить — зум\n" +
+            "Без кольца: тап по дужке — фото / ОК,\n  свайп — зум, «Назад» — меню\n" +
             "«Назад» в меню — выйти из приложения\n" +
-            "Запись: правая кнопка — стоп,\n  колесо — зум\n" +
             "\n" +
             "НАСТРОЙКИ\n" +
             "Нажать колесо — следующий пункт\n" +
             "Крутить колесо — изменить\n" +
-            "«Назад» — сохранить и выйти\n" +
+            "Правая кнопка — сохранить и выйти\n" +
             "\n" +
             "Левую кнопку кольца и кнопку\n" +
             "на очках не жать: их забирает\n" +
             "системная камера.\n" +
             "\n" +
-            "Нажать колесо — закрыть справку";
+            "Колесо или правая кнопка — закрыть";
 
     private final Handler mainHandler = new Handler();
     private final CaptureOptions options = new CaptureOptions();
@@ -954,11 +954,11 @@ public final class MainActivity extends Activity {
         }
         hintLabel.setVisibility(View.VISIBLE);
         if (recording) {
-            hintLabel.setText("ЗАПИСЬ · стоп: правая кнопка\nколесо: зум");
+            hintLabel.setText("ЗАПИСЬ · стоп: нажать колесо\nкрутить колесо: зум");
         } else if (options.tapShutter) {
-            hintLabel.setText("фото: правая кнопка · зум: колесо\nменю: нажать на колесо");
+            hintLabel.setText("фото: нажать колесо · зум: крутить\nменю: правая кнопка");
         } else {
-            hintLabel.setText("съёмка тапом выкл · зум: колесо\nменю: нажать на колесо");
+            hintLabel.setText("фото: нажать колесо · зум: крутить\nменю: правая кнопка · тап выкл");
         }
     }
 
@@ -1393,7 +1393,7 @@ public final class MainActivity extends Activity {
             sb.append("нажать колесо: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
                     .append(" · крутить: дальше");
         } else {
-            sb.append("крутить колесо: изменить\nнажать колесо: след. пункт · «Назад»: выход");
+            sb.append("крутить колесо: изменить\nнажать колесо: след. пункт · правая кнопка: выход");
         }
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
@@ -1535,10 +1535,31 @@ public final class MainActivity extends Activity {
         }
     }
 
-    /** Ring wheel press: opens the menu; inside menus works as OK; stops a recording. */
+    /** Ring wheel press (mouse "Enter"): photo; OK inside menus; stops a recording. */
     private void onRingWheelPress() {
         if (helpOpen || actionsOpen || settingsOpen || recording) onTap();
+        else takePhoto();
+    }
+
+    /** Right ring button (mouse "properties"): opens the menu; inside menus goes back. */
+    private void onRingRightButton() {
+        if (helpOpen) closeHelp();
+        else if (settingsOpen) closeSettings();
+        else if (actionsOpen) closeActions();
+        else if (recording) setStatus("Стоп записи: нажать колесо");
         else openActions();
+    }
+
+    /** The right ring button sends a bare ENTER; the wheel press sends PLAY_PAUSE + ENTER.
+     *  Wait briefly so a PLAY_PAUSE arriving just after the ENTER can cancel it. */
+    private final Runnable ringRightButton = new Runnable() {
+        @Override public void run() { onRingRightButton(); }
+    };
+
+    static boolean isRingDevice(KeyEvent event) {
+        InputDevice d = event.getDevice();
+        String name = d == null ? null : d.getName();
+        return name != null && name.toUpperCase(java.util.Locale.ROOT).contains("RGR");
     }
 
     private void onTouchLongPress() {
@@ -1577,7 +1598,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < ACTIONS.length; i++) {
             sb.append(i == actionItem ? "▶ " : "  ").append(ACTIONS[i]).append('\n');
         }
-        sb.append("крутить колесо: выбрать\nнажать колесо: выполнить · «Назад»: выйти");
+        sb.append("крутить колесо: выбрать · нажать: выполнить\nправая кнопка: закрыть · «Назад»: выйти");
         menuPanel.setText(sb.toString());
         menuPanel.setVisibility(View.VISIBLE);
     }
@@ -1635,8 +1656,9 @@ public final class MainActivity extends Activity {
         if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
             // Pressing the ring wheel sends MEDIA_PLAY_PAUSE + ENTER (test 1.3); the
             // right ring button and a temple tap send ENTER only. So PLAY_PAUSE is
-            // the ring's own "menu / OK" key; swallow the ENTER that comes with it.
+            // the ring's own "photo / OK" key; swallow the ENTER that comes with it.
             if (event.getRepeatCount() == 0) {
+                mainHandler.removeCallbacks(ringRightButton);
                 suppressEnterUntil = SystemClock.elapsedRealtime() + 500L;
                 onRingWheelPress();
             }
@@ -1667,7 +1689,10 @@ public final class MainActivity extends Activity {
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             // Some touch surfaces / the ring report a tap only as a key. If no touch
             // event was seen just now, treat the key as a tap.
-            if (lastTouchUpAt < 0L || SystemClock.elapsedRealtime() - lastTouchUpAt > 400L) {
+            if (isRingDevice(event)) {
+                mainHandler.removeCallbacks(ringRightButton);
+                mainHandler.postDelayed(ringRightButton, 150L);
+            } else if (lastTouchUpAt < 0L || SystemClock.elapsedRealtime() - lastTouchUpAt > 400L) {
                 lastTouchEventAt = SystemClock.elapsedRealtime();
                 onTap();
             }
