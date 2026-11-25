@@ -26,6 +26,8 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Bundle;
@@ -76,7 +78,7 @@ public final class MainActivity extends Activity {
     private static final long RECONNECT_DELAY_MS = 2000L;
     private static final long BUTTON_CONFLICT_WINDOW_MS = 4000L;
     private static final long STATUS_VISIBLE_MS = 4000L;
-    private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 3f, 4f};
+    private static final float ZOOM_MAX = 4f;
     private static final String[] ACTIONS = {"Настройки фото и видео", "Записать видео", "Справка", "Выйти из приложения", "Отмена"};
     private static final int ACT_SETTINGS = 0, ACT_VIDEO = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
     private static final String BUTTON_DOWN = "com.android.action.ACTION_SPRITE_BUTTON_DOWN";
@@ -97,6 +99,7 @@ public final class MainActivity extends Activity {
             "КОЛЬЦО (как мышь)\n" +
             "Нажать колесо — фото / ОК\n" +
             "Крутить колесо — зум / выбор\n" +
+            "  (шаг зума 0.1×, меняется в настройках)\n" +
             "Правая кнопка — меню и настройки,\n  в меню — назад\n" +
             "Запись: колесо — стоп, крутить — зум\n" +
             "Без кольца: тап по дужке — фото / ОК,\n  свайп — зум, «Назад» — меню\n" +
@@ -144,7 +147,7 @@ public final class MainActivity extends Activity {
     private int sensorOrientation;
     private boolean videoStabilizationSupported;
     private final List<Integer> fixedFpsRanges = new ArrayList<>();
-    private int zoomIndex = 0;
+    private float zoom = 1f;
     private boolean opening;
     private boolean resumed;
     private volatile boolean takingPhoto;
@@ -307,6 +310,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashLog.install(getApplicationContext());
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
@@ -321,13 +325,16 @@ public final class MainActivity extends Activity {
         displayWakeLock.setReferenceCounted(false);
         cameraManager = getSystemService(CameraManager.class);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        options.selectPhotoAspect(prefs.getInt("photo_aspect", 0));
+        // 2.6: formats now carry orientation (16:9 vs 9:16); old indexes meant other formats.
+        options.selectPhotoAspect(prefs.getInt("photo_aspect2", 0));
+        options.selectZoomStep(prefs.getInt("zoom_step", 0));
         options.selectPhotoSize(prefs.getInt("photo_size", 0));
         options.selectJpegQuality(prefs.getInt("jpeg_quality", CaptureOptions.JPEG_QUALITY_DEFAULT_INDEX));
         options.tapShutter = prefs.getBoolean("tap_shutter", true);
         options.swipeReversed = prefs.getBoolean("swipe_reversed", false);
-        options.selectPreview(prefs.getInt("preview_size", 0),
-                prefs.getInt("preview_shift", CaptureOptions.PREVIEW_SHIFT_DEFAULT_INDEX));
+        // 2.6: default picture is smaller and lifted so its bottom edge stays readable.
+        options.selectPreview(prefs.getInt("preview_size2", CaptureOptions.PREVIEW_SIZE_DEFAULT_INDEX),
+                prefs.getInt("preview_shift2", CaptureOptions.PREVIEW_SHIFT_DEFAULT_INDEX));
         buildScreen();
         if (!prefs.getBoolean(PREF_HELP_SEEN, false)) {
             prefs.edit().putBoolean(PREF_HELP_SEEN, true).apply();
@@ -495,6 +502,7 @@ public final class MainActivity extends Activity {
         registerBatteryReceiver();
         registerAvailability();
         sendSafetyAction(ButtonSafetyService.ACTION_CLAIM);
+        claimMediaButtons();
         mainHandler.removeCallbacks(heartbeat);
         mainHandler.post(heartbeat);
         if (preview.isAvailable()) {
@@ -525,6 +533,7 @@ public final class MainActivity extends Activity {
             else abortVideo();
         }
         closeCamera();
+        releaseMediaButtons();
         sendSafetyAction(ButtonSafetyService.ACTION_RELEASE);
         stopCameraThread();
         super.onPause();
@@ -572,6 +581,8 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(reconnect);
         mainHandler.removeCallbacks(hideStatus);
         mainHandler.removeCallbacks(hideZoomFlash);
+        mainHandler.removeCallbacks(ringRightButton);
+        releaseMediaButtons();
         cancelTouchCallbacks();
         if (recording) {
             if (recorderStarted) finishVideoNow();
@@ -738,19 +749,27 @@ public final class MainActivity extends Activity {
         if (savedWidth > 0) options.selectVideoSize(savedWidth, savedHeight);
         options.selectFps(prefs.getInt("fps", 30));
         runOnUiThread(refreshOverlay);
+        final String crash = CrashLog.collect(this);
+        if (crash != null) {
+            Log.w(TAG, crash);
+            mainHandler.postDelayed(new Runnable() {
+                @Override public void run() { setStatus(crash); }
+            }, 1500L);
+        }
     }
 
     private void savePrefs() {
         int[] size = options.videoSize();
         SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putInt("photo_aspect", options.photoAspectIndex)
+                .putInt("photo_aspect2", options.photoAspectIndex)
+                .putInt("zoom_step", options.zoomStepIndex)
                 .putInt("photo_size", options.photoSizeIndex)
                 .putInt("jpeg_quality", options.jpegQualityIndex)
                 .putInt("fps", options.fps())
                 .putBoolean("tap_shutter", options.tapShutter)
                 .putBoolean("swipe_reversed", options.swipeReversed)
-                .putInt("preview_size", options.previewSizeIndex)
-                .putInt("preview_shift", options.previewShiftIndex);
+                .putInt("preview_size2", options.previewSizeIndex)
+                .putInt("preview_shift2", options.previewShiftIndex);
         if (size != null) editor.putInt("video_w", size[0]).putInt("video_h", size[1]);
         editor.apply();
     }
@@ -850,7 +869,7 @@ public final class MainActivity extends Activity {
     }
 
     private float effectiveZoom() {
-        return ZoomMath.clamp(ZOOM_STEPS[zoomIndex], maximumZoom);
+        return ZoomMath.clamp(zoom, maximumZoom);
     }
 
     private Rect fullCrop() {
@@ -863,7 +882,7 @@ public final class MainActivity extends Activity {
         Rect full = fullCrop();
         if (full != null) {
             builder.set(CaptureRequest.SCALER_CROP_REGION,
-                    applyZoom ? ZoomMath.crop(full, ZOOM_STEPS[zoomIndex], maximumZoom) : full);
+                    applyZoom ? ZoomMath.crop(full, zoom, maximumZoom) : full);
         }
     }
 
@@ -882,14 +901,15 @@ public final class MainActivity extends Activity {
 
     private void changeZoom(int direction) {
         if (recording && !recorderStarted) return;
-        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, zoomIndex + direction));
-        if (next == zoomIndex) {
-            flashZoom(direction > 0 ? "макс. 4×" : "мин. 1×");
+        float top = ZoomMath.clamp(ZOOM_MAX, maximumZoom);
+        float next = ZoomMath.step(zoom, direction, options.zoomStep(), top);
+        if (Math.abs(next - zoom) < 0.001f) {
+            flashZoom(direction > 0 ? String.format(Locale.US, "макс. %.1f×", top) : "мин. 1×");
             return;
         }
-        zoomIndex = next;
+        zoom = next;
         updateZoomUi();
-        flashZoom(String.format(Locale.US, "%.1f×", ZOOM_STEPS[zoomIndex]));
+        flashZoom(String.format(Locale.US, "%.1f×", zoom));
         CaptureRequest.Builder builder = repeatingBuilder;
         CameraCaptureSession current = session;
         if (builder != null && current != null && cameraHandler != null) {
@@ -912,8 +932,8 @@ public final class MainActivity extends Activity {
     }
 
     private void updateZoomUi() {
-        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", ZOOM_STEPS[zoomIndex]));
-        if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoomIndex, ZOOM_STEPS.length));
+        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", zoom));
+        if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoom, ZOOM_MAX));
         updatePhotoInfo();
     }
 
@@ -1049,7 +1069,7 @@ public final class MainActivity extends Activity {
             ContentValues ready = new ContentValues();
             ready.put(MediaStore.Images.Media.IS_PENDING, 0);
             getContentResolver().update(uri, ready, null, null);
-            boolean wanted = zoom > 1.01f || Math.abs(aspect - 4f / 3f) > 0.02f;
+            boolean wanted = zoom > 1.01f || aspect > 0f;
             if (wanted && !result.cropped) {
                 message = "Сохранено БЕЗ зума — не хватило памяти";
             } else {
@@ -1063,7 +1083,7 @@ public final class MainActivity extends Activity {
                     @Override public void run() { updatePhotoInfo(); }
                 });
             }
-        } catch (Exception error) {
+        } catch (Throwable error) {
             Log.e(TAG, "Could not save photo", error);
             message = "Не удалось сохранить фото";
         } finally {
@@ -1073,14 +1093,17 @@ public final class MainActivity extends Activity {
     }
 
     private static String aspectTag(float aspect) {
-        return aspectLabel(aspect).replace(':', 'x');
+        return aspect <= 0f ? "full" : aspectLabel(aspect).replace(':', 'x');
     }
 
     private static String aspectLabel(float aspect) {
-        if (Math.abs(aspect - 16f / 9f) < 0.02f) return "16:9";
-        if (Math.abs(aspect - 3f / 2f) < 0.02f) return "3:2";
-        if (Math.abs(aspect - 1f) < 0.02f) return "1:1";
-        return "4:3";
+        if (aspect <= 0f) return "весь кадр";
+        float[] values = {16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
+        String[] names = {"16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "1:1"};
+        for (int i = 0; i < values.length; i++) {
+            if (Math.abs(aspect - values[i]) < 0.02f) return names[i];
+        }
+        return String.format(Locale.US, "%.2f", aspect);
     }
 
     /** Size of the next photo with the current zoom/format/size settings. */
@@ -1090,9 +1113,14 @@ public final class MainActivity extends Activity {
     }
 
     private int[] expectedPhotoDims() {
-        int w = photoSize == null ? 4032 : Math.max(photoSize.getWidth(), photoSize.getHeight());
-        int h = photoSize == null ? 3024 : Math.min(photoSize.getWidth(), photoSize.getHeight());
-        int[] crop = PhotoCrop.crop(w, h, effectiveZoom(), options.photoAspect());
+        // Size of the photo as viewed (upright): the sensor frame turned by the JPEG orientation.
+        int sw = photoSize == null ? 4032 : photoSize.getWidth();
+        int sh = photoSize == null ? 3024 : photoSize.getHeight();
+        int turn = getDisplay() == null ? sensorOrientation : jpegOrientation();
+        boolean turned = turn == 90 || turn == 270;
+        int w = turned ? sh : sw;
+        int h = turned ? sw : sh;
+        int[] crop = PhotoCrop.crop(w, h, effectiveZoom(), options.photoAspect(), false);
         int cw = crop == null ? w : crop[2] - crop[0];
         int ch = crop == null ? h : crop[3] - crop[1];
         return PhotoCrop.limitSize(cw, ch, options.photoMaxLongSide());
@@ -1503,7 +1531,9 @@ public final class MainActivity extends Activity {
     /** Ring wheel / DPAD / volume keys: filtered so one click = one step. */
     private void onKeyStep(int direction) {
         if (options.swipeReversed) direction = -direction;
-        if (arbiter.acceptKey(SystemClock.elapsedRealtime())) onStep(direction);
+        boolean zooming = !helpOpen && !actionsOpen && !settingsOpen;
+        long now = SystemClock.elapsedRealtime();
+        if (zooming ? arbiter.acceptZoomKey(now) : arbiter.acceptKey(now)) onStep(direction);
     }
 
     /** One clean step forward (+1) or back (-1). */
@@ -1539,6 +1569,64 @@ public final class MainActivity extends Activity {
     private void onRingWheelPress() {
         if (helpOpen || actionsOpen || settingsOpen || recording) onTap();
         else takePhoto();
+    }
+
+    private MediaSession mediaSession;
+    private long lastWheelPressAt = Long.MIN_VALUE / 2;
+
+    /**
+     * Pressing the ring wheel sends MEDIA_PLAY_PAUSE. If no app holds an
+     * active media session, the system passes that key on to the last player,
+     * which can be an audiobook on the phone connected over Bluetooth. While the
+     * camera is open we hold an active "playing" session that swallows media keys.
+     */
+    private void claimMediaButtons() {
+        try {
+            if (mediaSession == null) {
+                mediaSession = new MediaSession(this, "RokidZoomRuButtons");
+                mediaSession.setCallback(new MediaSession.Callback() {
+                    @Override public boolean onMediaButtonEvent(Intent intent) {
+                        KeyEvent key = intent == null ? null
+                                : (KeyEvent) intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                        if (key != null && key.getAction() == KeyEvent.ACTION_DOWN && key.getRepeatCount() == 0) {
+                            int code = key.getKeyCode();
+                            if (code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY
+                                    || code == KeyEvent.KEYCODE_MEDIA_PAUSE || code == KeyEvent.KEYCODE_HEADSETHOOK) {
+                                handleWheelPress();
+                            }
+                        }
+                        return true;
+                    }
+                }, mainHandler);
+            }
+            mediaSession.setPlaybackState(new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE)
+                    .setState(PlaybackState.STATE_PLAYING, 0L, 0f)
+                    .build());
+            mediaSession.setActive(true);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Media session unavailable", error);
+        }
+    }
+
+    private void releaseMediaButtons() {
+        if (mediaSession == null) return;
+        try {
+            mediaSession.setActive(false);
+            mediaSession.release();
+        } catch (RuntimeException ignored) {
+        }
+        mediaSession = null;
+    }
+
+    /** Wheel press from the activity key path or from the media session; never twice. */
+    private void handleWheelPress() {
+        long now = SystemClock.elapsedRealtime();
+        mainHandler.removeCallbacks(ringRightButton);
+        suppressEnterUntil = now + 500L;
+        if (now - lastWheelPressAt < 400L) return;
+        lastWheelPressAt = now;
+        onRingWheelPress();
     }
 
     /** Right ring button (mouse "properties"): opens the menu; inside menus goes back. */
@@ -1657,11 +1745,7 @@ public final class MainActivity extends Activity {
             // Pressing the ring wheel sends MEDIA_PLAY_PAUSE + ENTER (test 1.3); the
             // right ring button and a temple tap send ENTER only. So PLAY_PAUSE is
             // the ring's own "photo / OK" key; swallow the ENTER that comes with it.
-            if (event.getRepeatCount() == 0) {
-                mainHandler.removeCallbacks(ringRightButton);
-                suppressEnterUntil = SystemClock.elapsedRealtime() + 500L;
-                onRingWheelPress();
-            }
+            if (event.getRepeatCount() == 0) handleWheelPress();
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {

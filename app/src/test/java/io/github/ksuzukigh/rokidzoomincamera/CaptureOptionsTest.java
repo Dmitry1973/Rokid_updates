@@ -44,7 +44,16 @@ public final class CaptureOptionsTest {
         o.change(CaptureOptions.ITEM_PHOTO_ASPECT, -1);
         assertEquals(1f, o.photoAspect(), 0.001f);
         o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
-        assertEquals(4f / 3f, o.photoAspect(), 0.001f);
+        assertEquals(0f, o.photoAspect(), 0.001f);
+        assertEquals("весь кадр", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
+        o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
+        assertEquals("16:9 гориз.", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
+        o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
+        assertEquals("9:16 верт.", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
+        assertEquals(9f / 16f, o.photoAspect(), 0.001f);
+        assertEquals(0.1f, o.zoomStep(), 0.001f);
+        o.change(CaptureOptions.ITEM_ZOOM_STEP, 1);
+        assertEquals(0.2f, o.zoomStep(), 0.001f);
         o.change(CaptureOptions.ITEM_TAP_SHUTTER, 1);
         assertFalse(o.tapShutter);
         assertEquals("выкл", o.valueLabel(CaptureOptions.ITEM_TAP_SHUTTER));
@@ -52,15 +61,19 @@ public final class CaptureOptionsTest {
 
     @Test public void previewPlacementIsClamped() {
         CaptureOptions o = new CaptureOptions();
+        // default: 90 % lifted by 5 %, so the top edge stays and the bottom moves up
+        assertEquals(0.9f, o.previewScale(), 0.001f);
+        assertEquals(-0.05f, o.previewShift(), 0.001f);
+        assertEquals(0f, 0.5f - o.previewScale() / 2f + o.previewShift(), 0.001f);
+        o.change(CaptureOptions.ITEM_PREVIEW_SIZE, 1);
         assertEquals(1f, o.previewScale(), 0.001f);
-        assertEquals(0f, o.previewShift(), 0.001f);
         o.change(CaptureOptions.ITEM_PREVIEW_SIZE, 1);
         assertEquals(1f, o.previewScale(), 0.001f);
         o.change(CaptureOptions.ITEM_PREVIEW_SIZE, -1);
         assertEquals(0.9f, o.previewScale(), 0.001f);
         o.change(CaptureOptions.ITEM_PREVIEW_SHIFT, 1);
-        assertEquals(-0.05f, o.previewShift(), 0.001f);
-        assertEquals("выше на 5%", o.valueLabel(CaptureOptions.ITEM_PREVIEW_SHIFT));
+        assertEquals(-0.1f, o.previewShift(), 0.001f);
+        assertEquals("выше на 10%", o.valueLabel(CaptureOptions.ITEM_PREVIEW_SHIFT));
     }
 
     @Test public void alwaysHasAFrameRate() {
@@ -90,7 +103,7 @@ public final class CaptureOptionsTest {
 
     @Test public void menuHasActionItemsAtTheEnd() {
         CaptureOptions o = new CaptureOptions();
-        assertEquals(11, CaptureOptions.ITEM_COUNT);
+        assertEquals(12, CaptureOptions.ITEM_COUNT);
         o.change(CaptureOptions.ITEM_SWIPE_DIR, 1);
         assertEquals("обратный", o.valueLabel(CaptureOptions.ITEM_SWIPE_DIR));
         org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_HELP));

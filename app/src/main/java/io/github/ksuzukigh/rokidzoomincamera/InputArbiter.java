@@ -14,6 +14,9 @@ package io.github.ksuzukigh.rokidzoomincamera;
 final class InputArbiter {
     static final long STEP_GAP_MS = 280L;
     static final long TOUCH_SHADOW_MS = 350L;
+    /** Zoom uses small 0.1x steps, so it accepts clicks much faster; this only
+     *  merges the RIGHT+DOWN pair (and burst) that one wheel click sends. */
+    static final long ZOOM_GAP_MS = 90L;
 
     private boolean touching;
     private long touchUpAt = Long.MIN_VALUE / 2;
@@ -39,8 +42,18 @@ final class InputArbiter {
         return acceptStep(now);
     }
 
+    /** A wheel / swipe key while zooming. */
+    boolean acceptZoomKey(long now) {
+        if (touching || now - touchUpAt < TOUCH_SHADOW_MS) return false;
+        return acceptStep(now, ZOOM_GAP_MS);
+    }
+
     private boolean acceptStep(long now) {
-        if (now - lastStepAt < STEP_GAP_MS) return false;
+        return acceptStep(now, STEP_GAP_MS);
+    }
+
+    private boolean acceptStep(long now, long gap) {
+        if (now - lastStepAt < gap) return false;
         lastStepAt = now;
         return true;
     }

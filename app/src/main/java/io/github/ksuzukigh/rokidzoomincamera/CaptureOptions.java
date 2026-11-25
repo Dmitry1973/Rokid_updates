@@ -20,9 +20,10 @@ final class CaptureOptions {
     static final int ITEM_PREVIEW_SIZE = 6;
     static final int ITEM_PREVIEW_SHIFT = 7;
     static final int ITEM_SWIPE_DIR = 8;
-    static final int ITEM_HELP = 9;
-    static final int ITEM_CLOSE = 10;
-    static final int ITEM_COUNT = 11;
+    static final int ITEM_ZOOM_STEP = 9;
+    static final int ITEM_HELP = 10;
+    static final int ITEM_CLOSE = 11;
+    static final int ITEM_COUNT = 12;
 
     /** Limit for the long side of saved photos, pixels; 0 = full size. */
     static final int[] PHOTO_SIZES = {0, 3000, 2000, 1280};
@@ -33,10 +34,17 @@ final class CaptureOptions {
     static final int[] PREVIEW_SIZES = {100, 90, 80, 70, 60, 50};
     /** Vertical shift of the whole picture, percent of HUD height (negative = up). */
     static final int[] PREVIEW_SHIFTS = {-30, -25, -20, -15, -10, -5, 0, 5, 10};
-    static final int PREVIEW_SHIFT_DEFAULT_INDEX = 6;
+    /** Default 90 % lifted by 5 %: top edge stays, bottom edge moves up into the readable area. */
+    static final int PREVIEW_SIZE_DEFAULT_INDEX = 1;
+    static final int PREVIEW_SHIFT_DEFAULT_INDEX = 5;
 
-    static final float[] PHOTO_ASPECTS = {4f / 3f, 16f / 9f, 3f / 2f, 1f};
-    private static final String[] PHOTO_ASPECT_LABELS = {"4:3 (весь кадр)", "16:9", "3:2", "1:1"};
+    /** Width / height of the photo as viewed; 0 = the whole camera frame. */
+    static final float[] PHOTO_ASPECTS = {0f, 16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
+    private static final String[] PHOTO_ASPECT_LABELS = {
+            "весь кадр", "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт.",
+            "3:2 гориз.", "2:3 верт.", "1:1"};
+    /** Zoom change per wheel click / swipe. */
+    static final float[] ZOOM_STEPS = {0.1f, 0.2f, 0.5f};
 
     private final List<int[]> videoSizes = new ArrayList<>();
     private final List<Integer> frameRates = new ArrayList<>();
@@ -47,7 +55,8 @@ final class CaptureOptions {
     int fpsIndex = 0;
     boolean tapShutter = true;
     boolean swipeReversed = false;
-    int previewSizeIndex = 0;
+    int zoomStepIndex = 0;
+    int previewSizeIndex = PREVIEW_SIZE_DEFAULT_INDEX;
     int previewShiftIndex = PREVIEW_SHIFT_DEFAULT_INDEX;
 
     /** Sizes are {width, height}; frame rates in frames per second. */
@@ -132,6 +141,14 @@ final class CaptureOptions {
         return item == ITEM_HELP || item == ITEM_CLOSE;
     }
 
+    float zoomStep() {
+        return ZOOM_STEPS[zoomStepIndex];
+    }
+
+    void selectZoomStep(int index) {
+        zoomStepIndex = clampIndex(index, ZOOM_STEPS.length);
+    }
+
     float photoAspect() {
         return PHOTO_ASPECTS[photoAspectIndex];
     }
@@ -166,6 +183,8 @@ final class CaptureOptions {
             fpsIndex = wrap(fpsIndex + step, frameRates.size());
         } else if (item == ITEM_TAP_SHUTTER) {
             tapShutter = !tapShutter;
+        } else if (item == ITEM_ZOOM_STEP) {
+            zoomStepIndex = wrap(zoomStepIndex + step, ZOOM_STEPS.length);
         } else if (item == ITEM_SWIPE_DIR) {
             swipeReversed = !swipeReversed;
         } else if (item == ITEM_PREVIEW_SIZE) {
@@ -186,6 +205,7 @@ final class CaptureOptions {
             case ITEM_PREVIEW_SIZE: return "Размер картинки";
             case ITEM_PREVIEW_SHIFT: return "Высота картинки";
             case ITEM_SWIPE_DIR: return "Свайп зума";
+            case ITEM_ZOOM_STEP: return "Шаг зума";
             case ITEM_HELP: return "Справка";
             case ITEM_CLOSE: return "Закрыть меню";
             default: return "";
@@ -216,6 +236,7 @@ final class CaptureOptions {
             }
             case ITEM_JPEG_QUALITY: return JPEG_QUALITIES[jpegQualityIndex] + "%";
             case ITEM_SWIPE_DIR: return swipeReversed ? "обратный" : "обычный";
+            case ITEM_ZOOM_STEP: return String.format(Locale.US, "%.1f× за щелчок", zoomStep());
             case ITEM_HELP: return "нажать колесо";
             case ITEM_CLOSE: return "колесо / правая кн.";
             case ITEM_VIDEO_SIZE: {

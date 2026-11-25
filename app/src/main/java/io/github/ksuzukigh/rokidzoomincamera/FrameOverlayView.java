@@ -9,7 +9,7 @@ import android.view.View;
 
 /**
  * Draws the centre reticle and the area that will end up in the file:
- * a solid rectangle for the photo frame (when it is not the full 4:3 frame)
+ * a dashed rectangle for the photo frame (16:9 is wide, 9:16 is tall)
  * and corner brackets for the video frame.
  */
 final class FrameOverlayView extends View {
@@ -22,7 +22,8 @@ final class FrameOverlayView extends View {
     private float boxWidth;
     private float boxHeight;
     private float previewAspect = 4f / 3f;
-    private float photoAspect = 4f / 3f;
+    /** Width / height as viewed; 0 = the whole frame. */
+    private float photoAspect = 0f;
     private float videoAspect = 16f / 9f;
     private boolean recording;
 
@@ -76,19 +77,21 @@ final class FrameOverlayView extends View {
 
         if (boxWidth <= 0f || boxHeight <= 0f) return;
         float inset = 3f * density;
-        float[] f = PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, recording ? videoAspect : photoAspect);
+        float[] f = recording
+                ? PhotoCrop.fitFrameAlongLongSide(boxLeft, boxTop, boxWidth, boxHeight, videoAspect)
+                : PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, photoAspect);
         float w = getWidth();
         float h = getHeight();
         canvas.drawRect(0f, 0f, w, f[1], maskPaint);
         canvas.drawRect(0f, f[3], w, h, maskPaint);
         canvas.drawRect(0f, f[1], f[0], f[3], maskPaint);
         canvas.drawRect(f[2], f[1], w, f[3], maskPaint);
-        if (!recording && Math.abs(photoAspect - previewAspect) > 0.02f) {
-            float[] r = clip(PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, photoAspect), inset);
+        if (!recording && photoAspect > 0f) {
+            float[] r = clip(f, inset);
             canvas.drawRect(r[0], r[1], r[2], r[3], photoPaint);
         }
         if (recording) {
-            float[] r = clip(PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, videoAspect), inset);
+            float[] r = clip(f, inset);
             drawCorners(canvas, r, 26f * density);
         }
     }

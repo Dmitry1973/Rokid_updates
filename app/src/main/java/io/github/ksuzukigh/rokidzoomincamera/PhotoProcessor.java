@@ -76,7 +76,7 @@ final class PhotoProcessor {
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, bounds);
         int rawWidth = bounds.outWidth;
         int rawHeight = bounds.outHeight;
-        int[] crop = PhotoCrop.crop(rawWidth, rawHeight, zoom, aspect);
+        int[] crop = PhotoCrop.crop(rawWidth, rawHeight, zoom, aspect, isRotated(jpeg));
         int[] region = crop == null ? new int[]{0, 0, rawWidth, rawHeight} : crop;
         int regionWidth = region[2] - region[0];
         int regionHeight = region[3] - region[1];
@@ -130,6 +130,18 @@ final class PhotoProcessor {
             }
         }
         return new Result(jpeg, rawWidth, rawHeight, false);
+    }
+
+    /** True when EXIF says the picture is viewed turned by 90/270 degrees. */
+    static boolean isRotated(byte[] jpeg) {
+        try {
+            ExifInterface exif = new ExifInterface(new ByteArrayInputStream(jpeg));
+            int o = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            return o == ExifInterface.ORIENTATION_ROTATE_90 || o == ExifInterface.ORIENTATION_ROTATE_270
+                    || o == ExifInterface.ORIENTATION_TRANSPOSE || o == ExifInterface.ORIENTATION_TRANSVERSE;
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private static void copyExif(byte[] source, File target) {

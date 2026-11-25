@@ -1,15 +1,21 @@
-<!-- "ZOOM Камера RU": magnifier with a plus, on blue. Differs from camera icons. -->
+<!-- "ZOOM Камера RU": a camera body with a big lens and a small zoom "+" badge. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
     <path android:fillColor="#0D2D52" android:pathData="M0,0h108v108h-108z" />
-    <!-- handle -->
-    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="12"
-        android:strokeLineCap="round" android:pathData="M64,64L84,84" />
-    <!-- lens -->
-    <path android:fillColor="#123F6E" android:strokeColor="#8CFF8C" android:strokeWidth="8"
-        android:pathData="M22,46a24,24 0,1 0,48 0a24,24 0,1 0,-48 0z" />
-    <!-- plus -->
-    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="7"
-        android:strokeLineCap="round" android:pathData="M46,34v24M34,46h24" />
+    <!-- viewfinder bump on top -->
+    <path android:fillColor="#FFFFFF" android:pathData="M38,28h24l5,8h-34z" />
+    <!-- camera body -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M22,36h64a6,6 0,0 1,6 6v34a6,6 0,0 1,-6 6h-64a6,6 0,0 1,-6 -6v-34a6,6 0,0 1,6 -6z" />
+    <!-- lens ring -->
+    <path android:fillColor="#0D2D52" android:pathData="M37,59a17,17 0,1 0,34 0a17,17 0,1 0,-34 0z" />
+    <path android:fillColor="#8CFF8C" android:pathData="M43,59a11,11 0,1 0,22 0a11,11 0,1 0,-22 0z" />
+    <path android:fillColor="#0D2D52" android:pathData="M49,59a5,5 0,1 0,10 0a5,5 0,1 0,-10 0z" />
+    <!-- flash dot -->
+    <path android:fillColor="#0D2D52" android:pathData="M76,44a3,3 0,1 0,6 0a3,3 0,1 0,-6 0z" />
+    <!-- zoom badge -->
+    <path android:fillColor="#8CFF8C" android:pathData="M74,70a12,12 0,1 0,24 0a12,12 0,1 0,-24 0z" />
+    <path android:fillColor="#00000000" android:strokeColor="#0D2D52" android:strokeWidth="4"
+        android:strokeLineCap="round" android:pathData="M86,63v14M79,70h14" />
 </vector>
