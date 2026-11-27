@@ -4,6 +4,11 @@ import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -255,15 +260,61 @@ public class MainActivity extends Activity implements SensorEventListener {
                     s.getMaximumRange(), s.getResolution(), s.getPower(), s.getMinDelay(),
                     s.isDynamicSensor() ? " dynamic" : ""));
         }
-        // Save once (per sensor count) so it can be sent from the phone.
-        String key = "savedList_" + all.size();
+        // Save once (per sensor count). The picture goes to DCIM/Camera, so the
+        // Hi Rokid gallery syncs it to the phone like a photo; the .txt stays on
+        // the glasses in Download (reachable later over adb).
+        String key = "savedList2_" + all.size();
         if (!p.getBoolean(key, false)) {
-            String name = "Horizon_sensors_"
-                    + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".txt";
-            if (saveToDownloads(name, file.toString())) {
-                p.edit().putBoolean(key, true).apply();
-                view.fileNote = "список: Download/" + name;
+            String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            boolean png = saveListPicture("Horizon_sensors_" + stamp + ".png", file.toString());
+            boolean txt = saveToDownloads("Horizon_sensors_" + stamp + ".txt", file.toString());
+            if (png || txt) {
+                String note = png ? "список: галерея, Horizon_sensors_" + stamp + ".png"
+                        : "список: Download/Horizon_sensors_" + stamp + ".txt";
+                p.edit().putBoolean(key, true).putString("fileNote", note).apply();
+            } else {
+                p.edit().putString("fileNote", "список сохранить не удалось").apply();
             }
+        }
+        view.fileNote = p.getString("fileNote", null);
+    }
+
+    /** Renders the sensor list as a black/green picture and saves it to DCIM/Camera. */
+    private boolean saveListPicture(String name, String text) {
+        try {
+            String[] lines = text.split("\n");
+            int lineH = 26;
+            int width = 1080;
+            int height = 30 + lines.length * lineH + 20;
+            Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bmp);
+            c.drawColor(Color.BLACK);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(Color.rgb(0, 255, 0));
+            paint.setTextSize(21f);
+            paint.setTypeface(Typeface.MONOSPACE);
+            float y = 34;
+            for (int i = 0; i < lines.length; i++) {
+                c.drawText(lines[i], 16, y, paint);
+                y += lineH;
+            }
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, name);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/png");
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera");
+            Uri uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) return false;
+            OutputStream out = getContentResolver().openOutputStream(uri, "w");
+            if (out == null) return false;
+            try {
+                bmp.compress(Bitmap.CompressFormat.PNG, 100, out);
+            } finally {
+                out.close();
+                bmp.recycle();
+            }
+            return true;
+        } catch (Throwable ex) {
+            return false;
         }
     }
 

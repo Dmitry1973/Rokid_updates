@@ -84,32 +84,36 @@ final class HorizonView extends View {
         float w = getWidth();
         float h = getHeight();
 
-        // ---- text block at the top
-        float y = 50;
+        // ---- text block at the top: small PITCH / ROLL labels over big numbers
+        float y = 26;
+        String rl = "ROLL";
+        c.drawText("PITCH", 14, y, small);
+        c.drawText(rl, w - 14 - small.measureText(rl), y, small);
+        y = 72;
         if (hasData) {
-            c.drawText(String.format(Locale.US, "Т %+5.1f°", pitch), 14, y, big);
-            String r = String.format(Locale.US, "К %+5.1f°", roll);
+            c.drawText(String.format(Locale.US, "%+5.1f°", pitch), 14, y, big);
+            String r = String.format(Locale.US, "%+5.1f°", roll);
             c.drawText(r, w - 14 - big.measureText(r), y, big);
         } else {
             c.drawText("нет данных датчика", 14, y, mid);
         }
-        y += 32;
+        y += 30;
         String line2 = sourceName;
-        if (hasPressure) line2 += String.format(Locale.US, "   %.1f гПа", pressureHpa);
+        if (hasPressure) line2 += String.format(Locale.US, "   %.1f hPa", pressureHpa);
         c.drawText(line2, 14, y, mid);
-        y += 26;
+        y += 24;
         c.drawText("OK — ноль   колесо — список датчиков", 14, y, small);
         long now = System.currentTimeMillis();
         if (flash != null && now < flashUntil) {
-            y += 30;
+            y += 28;
             c.drawText(flash, 14, y, mid);
         }
 
         // ---- attitude indicator
         float cx = w / 2f;
         // Kept high on the screen: the bottom of the HUD is hard to read.
-        float r = Math.min(w / 2f - 30f, Math.min(195f, (h - 160f) / 2f));
-        float cy = 160f + r;
+        float r = Math.min(w / 2f - 30f, Math.min(190f, (h - 190f) / 2f));
+        float cy = 180f + r;
 
         c.save();
         path.reset();
@@ -199,7 +203,7 @@ final class HorizonView extends View {
         c.drawText(String.format(Locale.US, "вверх (x,y,z): %+.2f %+.2f %+.2f", up[0], up[1], up[2]), 12, y, small);
         y += 22;
         if (hasPressure) {
-            c.drawText(String.format(Locale.US, "давление: %.2f гПа", pressureHpa), 12, y, small);
+            c.drawText(String.format(Locale.US, "давление: %.2f hPa", pressureHpa), 12, y, small);
         } else {
             c.drawText("датчика давления нет", 12, y, small);
         }
