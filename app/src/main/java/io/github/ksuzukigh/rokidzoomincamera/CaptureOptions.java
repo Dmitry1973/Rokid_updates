@@ -57,7 +57,7 @@ final class CaptureOptions {
     static final int[] FRAME_SCALES = {50, 70, 85, 100, 120, 150, 200, 300};
     static final int FRAME_SCALE_DEFAULT_INDEX = 3;
     /** Zoom change per wheel click / swipe. */
-    static final float[] ZOOM_STEPS = {0.1f, 0.2f, 0.5f};
+    static final float[] ZOOM_STEPS = {0.1f, 0.05f, 0.2f, 0.5f};
 
     private final List<int[]> videoSizes = new ArrayList<>();
     private final List<Integer> frameRates = new ArrayList<>();

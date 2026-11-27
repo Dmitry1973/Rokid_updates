@@ -34,4 +34,21 @@ public final class ZoomMathTest {
         org.junit.Assert.assertEquals(1f, ZoomMath.step(1.1f, -1, 0.2f, 4f), 0.0001f);
         org.junit.Assert.assertEquals(1.2f, ZoomMath.step(1f, 1, 0.2f, 4f), 0.0001f);
     }
+
+    @org.junit.Test public void glideMovesInSmallTicksAndStopsOnTarget() {
+        float z = 1f;
+        int ticks = 0;
+        while (Math.abs(z - 1.1f) > 0.0001f && ticks < 100) {
+            float next = ZoomMath.glide(z, 1.1f);
+            org.junit.Assert.assertTrue(next - z <= 0.0151f);
+            org.junit.Assert.assertTrue(next > z);
+            z = next;
+            ticks++;
+        }
+        org.junit.Assert.assertEquals(1.1f, z, 0.0001f);
+        org.junit.Assert.assertTrue("ticks " + ticks, ticks >= 6 && ticks <= 12);
+        org.junit.Assert.assertEquals(2.0f, ZoomMath.glide(2.005f, 2.0f), 0.0001f);
+        org.junit.Assert.assertTrue(ZoomMath.glide(4f, 1f) < 4f);
+        org.junit.Assert.assertEquals(1.05f, ZoomMath.step(1f, 1, 0.05f, 4f), 0.0001f);
+    }
 }

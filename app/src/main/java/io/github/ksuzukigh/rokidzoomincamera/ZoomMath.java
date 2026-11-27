@@ -21,10 +21,25 @@ final class ZoomMath {
         return sb.append(String.format(java.util.Locale.US, " %.0f×", max)).toString();
     }
 
-    /** One zoom step, rounded to 0.1 so repeated steps never drift; kept in [1, maximum]. */
+    static final long GLIDE_TICK_MS = 33L;
+
+    /**
+     * One animation tick from the current zoom toward the target: at least 0.01x,
+     * faster when far away (about 15 % of the gap), never past the target. At 30
+     * ticks/s a 0.1x click takes ~0.3 s, so the video shows no visible steps.
+     */
+    static float glide(float current, float target) {
+        float gap = target - current;
+        if (Math.abs(gap) <= 0.01f) return target;
+        float move = Math.max(0.01f, Math.abs(gap) * 0.15f);
+        float next = current + Math.signum(gap) * move;
+        return Math.round(next * 1000f) / 1000f;
+    }
+
+    /** One zoom step, rounded to 0.01 so repeated steps never drift; kept in [1, maximum]. */
     static float step(float zoom, int direction, float stepSize, float maximum) {
         float next = zoom + (direction >= 0 ? stepSize : -stepSize);
-        next = Math.round(next * 10f) / 10f;
+        next = Math.round(next * 100f) / 100f;
         return Math.max(1f, Math.min(next, Math.max(1f, maximum)));
     }
 

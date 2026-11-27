@@ -53,7 +53,7 @@ public final class CaptureOptionsTest {
         assertEquals(9f / 16f, o.photoAspect(), 0.001f);
         assertEquals(0.1f, o.zoomStep(), 0.001f);
         o.change(CaptureOptions.ITEM_ZOOM_STEP, 1);
-        assertEquals(0.2f, o.zoomStep(), 0.001f);
+        assertEquals(0.05f, o.zoomStep(), 0.001f);
         o.change(CaptureOptions.ITEM_TAP_SHUTTER, 1);
         assertFalse(o.tapShutter);
         assertEquals("выкл", o.valueLabel(CaptureOptions.ITEM_TAP_SHUTTER));

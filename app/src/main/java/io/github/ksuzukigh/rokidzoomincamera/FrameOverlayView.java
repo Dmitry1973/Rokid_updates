@@ -31,6 +31,9 @@ final class FrameOverlayView extends View {
     /** Frame-only mode: size of the frame relative to the picture area (calibration / zoom). */
     private float frameScale = 1f;
     private final Paint outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint labelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private String photoLabel;
+    private String videoLabel;
 
     FrameOverlayView(Context context) {
         super(context);
@@ -48,6 +51,8 @@ final class FrameOverlayView extends View {
         videoPaint.setStrokeWidth(3f * density);
         // Everything outside the frame that goes into the file is dimmed, so the
         // visible picture has the chosen shape (4:3, 16:9, 3:2, 1:1).
+        labelPaint.setColor(Color.rgb(90, 190, 90));
+        labelPaint.setTextSize(11f * getResources().getDisplayMetrics().scaledDensity);
         outlinePaint.setColor(Color.argb(255, 160, 255, 160));
         outlinePaint.setStyle(Paint.Style.STROKE);
         outlinePaint.setStrokeWidth(3f * density);
@@ -76,6 +81,13 @@ final class FrameOverlayView extends View {
      * Frame-only mode: no camera picture, just the outline of what gets captured.
      * @param scale calibration divided by zoom; 1 = the whole picture area
      */
+    /** Small captions drawn at the frame, e.g. "ФОТО 3:4 весь кадр", "ВИДЕО 16:9". */
+    void setFrameLabels(String photo, String video) {
+        photoLabel = photo;
+        videoLabel = video;
+        invalidate();
+    }
+
     void setFrameOnly(boolean enabled, float scale) {
         frameOnly = enabled;
         frameScale = scale;
@@ -102,8 +114,17 @@ final class FrameOverlayView extends View {
             float sl = boxLeft + (boxWidth - sw) / 2f;
             float st = boxTop + (boxHeight - sh) / 2f;
             float[] r = clip(PhotoCrop.fitFrame(sl, st, sw, sh, aspect), inset);
-            canvas.drawRect(r[0], r[1], r[2], r[3], outlinePaint);
-            if (recording) drawCorners(canvas, r, 26f * density);
+            // Light frame so it does not distract while filming: corner brackets
+            // plus three short ticks on each side.
+            float shortSide = Math.min(r[2] - r[0], r[3] - r[1]);
+            drawCorners(canvas, r, Math.min(26f * density, shortSide * 0.25f), outlinePaint);
+            drawTicks(canvas, r, 5f * density, outlinePaint);
+            String label = recording ? videoLabel : photoLabel;
+            if (label != null) {
+                float y = r[1] - 4f * density;
+                if (y < labelPaint.getTextSize()) y = r[1] + labelPaint.getTextSize() + 4f * density;
+                canvas.drawText(label, r[0] + 4f * density, y, labelPaint);
+            }
             return;
         }
         float[] f = recording
@@ -121,7 +142,20 @@ final class FrameOverlayView extends View {
         }
         if (recording) {
             float[] r = clip(f, inset);
-            drawCorners(canvas, r, 26f * density);
+            drawCorners(canvas, r, 26f * density, videoPaint);
+        }
+    }
+
+    private void drawTicks(Canvas canvas, float[] r, float half, Paint paint) {
+        float w = r[2] - r[0];
+        float h = r[3] - r[1];
+        for (int i = 1; i <= 3; i++) {
+            float x = r[0] + w * i / 4f;
+            float y = r[1] + h * i / 4f;
+            canvas.drawLine(x - half, r[1], x + half, r[1], paint);
+            canvas.drawLine(x - half, r[3], x + half, r[3], paint);
+            canvas.drawLine(r[0], y - half, r[0], y + half, paint);
+            canvas.drawLine(r[2], y - half, r[2], y + half, paint);
         }
     }
 
@@ -132,7 +166,7 @@ final class FrameOverlayView extends View {
         };
     }
 
-    private void drawCorners(Canvas canvas, float[] r, float size) {
+    private void drawCorners(Canvas canvas, float[] r, float size, Paint videoPaint) {
         float l = r[0], t = r[1], rr = r[2], b = r[3];
         canvas.drawLine(l, t, l + size, t, videoPaint);
         canvas.drawLine(l, t, l, t + size, videoPaint);

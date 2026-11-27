@@ -89,6 +89,7 @@ public final class MainActivity extends Activity {
     private static final String PREF_HELP_SEEN = "help_seen_v21";
     private static final String PHOTO_FILE_PREFIX = "RokidZoomRu_";
     private static final int GREEN = Color.rgb(140, 255, 140);
+    private static final int DIM_GREEN = Color.rgb(90, 190, 90);
     private static final Comparator<Size> BY_AREA = new Comparator<Size>() {
         @Override public int compare(Size a, Size b) {
             return Long.compare((long) a.getWidth() * a.getHeight(), (long) b.getWidth() * b.getHeight());
@@ -99,7 +100,7 @@ public final class MainActivity extends Activity {
             "КОЛЬЦО (как мышь)\n" +
             "Нажать колесо — фото / ОК\n" +
             "Крутить колесо — зум / выбор\n" +
-            "  (шаг зума 0.1×, меняется в настройках)\n" +
+            "  (щелчок = 0.1×, зум перетекает плавно)\n" +
             "Правая кнопка — меню и настройки,\n  в меню — назад\n" +
             "Запись: колесо — стоп, крутить — зум\n" +
             "Без кольца: тап по дужке — фото / ОК,\n  свайп — зум, «Назад» — меню\n" +
@@ -393,28 +394,30 @@ public final class MainActivity extends Activity {
         stage.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
         // ---- HUD text: fixed to the top of the display, does not move with the picture.
-        zoomLabel = hudText(30, GREEN, true);
+        // Big bright text makes faint mirrored "ghosts" in the glasses' optics,
+        // so the zoom readout is smaller and dimmer than before.
+        zoomLabel = hudText(22, DIM_GREEN, true);
         zoomLabel.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         FrameLayout.LayoutParams zoomParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         zoomParams.leftMargin = dp(10);
         zoomParams.topMargin = dp(2);
         root.addView(zoomLabel, zoomParams);
 
-        zoomBar = hudText(12, GREEN, false);
-        zoomBar.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        // Under the zoom: video info (format, resolution, fps; REC + size while recording).
+        zoomBar = hudText(11, DIM_GREEN, true);
         FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         barParams.leftMargin = dp(12);
-        barParams.topMargin = dp(42);
+        barParams.topMargin = dp(34);
         root.addView(zoomBar, barParams);
 
         // Current photo format and size, always visible (top right, under the battery).
-        photoInfo = hudText(11, GREEN, true);
+        photoInfo = hudText(11, DIM_GREEN, true);
         FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
         infoParams.topMargin = dp(42);
         infoParams.rightMargin = dp(12);
         root.addView(photoInfo, infoParams);
 
-        batteryLabel = hudText(14, Color.WHITE, true);
+        batteryLabel = hudText(12, DIM_GREEN, false);
         batteryLabel.setText(BatteryDisplay.label(-1, false));
         batteryLabel.setGravity(Gravity.CENTER);
         batteryLabel.setBackground(box(165, dp(12)));
@@ -914,14 +917,32 @@ public final class MainActivity extends Activity {
     private void changeZoom(int direction) {
         if (recording && !recorderStarted) return;
         float top = ZoomMath.clamp(ZOOM_MAX, maximumZoom);
-        float next = ZoomMath.step(zoom, direction, options.zoomStep(), top);
-        if (Math.abs(next - zoom) < 0.001f) {
+        float next = ZoomMath.step(zoomTarget, direction, options.zoomStep(), top);
+        if (Math.abs(next - zoomTarget) < 0.001f) {
             flashZoom(direction > 0 ? String.format(Locale.US, "макс. %.1f×", top) : "мин. 1×");
             return;
         }
-        zoom = next;
-        updateZoomUi();
-        flashZoom(String.format(Locale.US, "%.1f×", zoom));
+        zoomTarget = next;
+        flashZoom(String.format(Locale.US, "%.1f×", zoomTarget));
+        mainHandler.removeCallbacks(zoomGlide);
+        mainHandler.post(zoomGlide);
+    }
+
+    /** Where the wheel wants the zoom; the real zoom glides there in 0.01x ticks. */
+    private float zoomTarget = 1f;
+
+    private final Runnable zoomGlide = new Runnable() {
+        @Override public void run() {
+            float next = ZoomMath.glide(zoom, zoomTarget);
+            if (Math.abs(next - zoom) < 0.0001f) return;
+            zoom = next;
+            updateZoomUi();
+            applyZoomToCamera();
+            if (Math.abs(zoom - zoomTarget) > 0.0001f) mainHandler.postDelayed(this, ZoomMath.GLIDE_TICK_MS);
+        }
+    };
+
+    private void applyZoomToCamera() {
         CaptureRequest.Builder builder = repeatingBuilder;
         CameraCaptureSession current = session;
         if (builder != null && current != null && cameraHandler != null) {
@@ -944,8 +965,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateZoomUi() {
-        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", zoom));
-        if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoom, ZOOM_MAX));
+        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.2f×", zoom));
         updateOverlay();
     }
 
@@ -955,19 +975,21 @@ public final class MainActivity extends Activity {
         int[] video = options.videoSize();
         int[] expectedVideo = expectedVideoSize();
         String videoLabel = expectedVideo == null ? "—" : videoTitle(expectedVideo, options.fps());
+        String videoLine;
         if (recording) {
             long bytes = -1L;
             try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
             int[] rec = recordingSize;
-            sb.append("REC ").append(rec == null ? videoLabel : videoTitle(rec, recordingFps));
-            if (bytes > 0) sb.append(" · ").append(MediaLabels.fileSize(bytes));
+            videoLine = "REC " + (rec == null ? videoLabel : videoTitle(rec, recordingFps))
+                    + (bytes > 0 ? " · " + MediaLabels.fileSize(bytes) : "");
         } else {
-            int[] dims = expectedPhotoDims();
-            sb.append("ФОТО ").append(aspectLabel(options.photoAspect())).append(" · ")
-                    .append(MediaLabels.megapixels(dims[0], dims[1]))
-                    .append("\nВИДЕО ").append(videoLabel);
-            if (lastFileInfo != null) sb.append("\nпосл.: ").append(lastFileInfo);
+            videoLine = "ВИДЕО " + videoLabel;
         }
+        if (zoomBar != null) zoomBar.setText(videoLine);
+        int[] dims = expectedPhotoDims();
+        sb.append("ФОТО ").append(aspectLabel(options.photoAspect())).append(" · ")
+                .append(MediaLabels.megapixels(dims[0], dims[1]));
+        if (lastFileInfo != null) sb.append("\nпосл.: ").append(lastFileInfo);
         photoInfo.setText(sb.toString());
         photoInfo.setGravity(Gravity.END);
         photoInfo.setVisibility(View.VISIBLE);
@@ -983,6 +1005,11 @@ public final class MainActivity extends Activity {
             // Frame only: the camera picture is hidden (still running for capture) and the
             // outline shrinks with zoom, like the area that really goes into the file.
             overlay.setFrameOnly(options.frameOnly, options.frameScale() / Math.max(1f, effectiveZoom()));
+            float pa = options.photoAspect();
+            String photoName = pa > 0f ? CaptureOptions.aspectName(pa)
+                    : CaptureOptions.aspectName(expectedPhotoAspect()) + " весь кадр";
+            overlay.setFrameLabels("ФОТО " + photoName,
+                    "ВИДЕО " + CaptureOptions.aspectName(options.videoViewAspect()));
         }
         if (preview != null) preview.setAlpha(options.frameOnly ? 0f : 1f);
     }
@@ -1126,6 +1153,12 @@ public final class MainActivity extends Activity {
             if (Math.abs(aspect - values[i]) < 0.02f) return names[i];
         }
         return String.format(Locale.US, "%.2f", aspect);
+    }
+
+    /** Width / height of the full photo frame as viewed (3:4 on RV101). */
+    private float expectedPhotoAspect() {
+        int[] d = expectedPhotoDims();
+        return d[1] > 0 ? (float) d[0] / d[1] : 0.75f;
     }
 
     /** Size of the next photo with the current zoom/format/size settings. */

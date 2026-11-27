@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.9.0-ru (2026-11-27)
+- Lighter frame in frame-only view: corner brackets plus three short ticks per side instead of
+  a solid outline, with a small caption «ФОТО 3:4 весь кадр» / «ВИДЕО 16:9» so it is clear which
+  frame is shown (idle = photo frame, recording = video frame).
+- Zoom bar and its «1×…4×» scale removed (confusing next to the real value); the line under the
+  zoom now shows video info («ВИДЕО 16:9 1080p30», «REC … · size» while recording).
+- Smooth zoom: a wheel click moves the target by 0.1× (0.05 / 0.2 / 0.5 selectable) and the real
+  zoom glides there in 0.01× ticks at 30 fps, so steps are no longer visible in videos.
+  Zoom readout shows two decimals.
+- Faint mirrored "ghost" copies of the top labels come from the glasses' optics (bright pixels
+  reflect inside the waveguide), not from the app. The brightest elements were made smaller and
+  dimmer: zoom readout 30 → 22 sp, battery white → dim green, info text dim green.
+
 ## 2.8.0-ru (2026-11-27)
 - New default view «только рамка» (frame only): the camera picture is hidden on the HUD
   (the camera keeps running for capture); only a bright outline of what goes into the file
