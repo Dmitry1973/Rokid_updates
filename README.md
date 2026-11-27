@@ -8,7 +8,7 @@ The project builds two APKs:
 
 | Module | App on the glasses | Purpose |
 |---|---|---|
-| `app` | **ZOOM Камера RU** (2.7.1-ru) | camera with smooth digital zoom, photo and video formats, resolution and fps choice |
+| `app` | **ZOOM Камера RU** (2.8.0-ru) | camera with smooth digital zoom, photo and video formats, resolution and fps choice |
 | `inputtest` | **Тест кнопок и кольца** (1.4) | shows which signals the temple touchpad, the button and the RGR06 ring send |
 
 The camera installs **next to** the original app (different application ID).
@@ -25,7 +25,9 @@ The camera installs **next to** the original app (different application ID).
 - **Video formats:** native (the camera gives 9:16 portrait on RV101), 16:9, 9:16, 4:3, 3:4, 1:1.
   Non-native shapes are rendered through OpenGL (`VideoGlRenderer`): the camera frame is turned
   upright, cropped and encoded. If a shape fails to start, recording falls back to native.
-- **Viewfinder shows the real frame:** everything outside the photo (or video while recording)
+- **Frame-only view (default):** no camera picture on the HUD, only the outline of what gets
+  captured; it shrinks with zoom. «Масштаб рамки» matches it to what the eye sees.
+- **Viewfinder shows the real frame (picture view):** everything outside the photo (or video while recording)
   is dimmed. File info at the top: `ФОТО 16:9 · 9.1 МП`, `ВИДЕО 16:9 1072p30`, last file.
 - **Media-key guard:** while the camera is open, an active media session swallows the ring's
   PLAY_PAUSE so it does not start a player on the paired phone.

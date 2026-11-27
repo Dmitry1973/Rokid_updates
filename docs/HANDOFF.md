@@ -1,6 +1,6 @@
 # Rokid Glasses RV101: firmware notes and app work
 
-State as of 2026-11-27 (camera 2.7.1-ru, input test 1.4). This document carries the context to a
+State as of 2026-11-27 (camera 2.8.0-ru, input test 1.4). This document carries the context to a
 new project or Claude Code session: "read docs/HANDOFF.md" and the session is up to date.
 Chat with the owner is in Russian; everything in the repository is in English.
 
@@ -50,7 +50,7 @@ video had no preview, only a timer.
 
 | Module | App | ID |
 |---|---|---|
-| `app` | **ZOOM Камера RU** 2.7.1-ru | `io.github.ksuzukigh.rokidzoomincamera.ru` (next to the original) |
+| `app` | **ZOOM Камера RU** 2.8.0-ru | `io.github.ksuzukigh.rokidzoomincamera.ru` (next to the original) |
 | `inputtest` | **Тест кнопок и кольца** 1.4 | `kz.rokid.inputtest` |
 
 Branch `v2.1`, PR #1 into `main` (one commit per version, 2.1.0 … 2.7.1). See CHANGELOG.md.

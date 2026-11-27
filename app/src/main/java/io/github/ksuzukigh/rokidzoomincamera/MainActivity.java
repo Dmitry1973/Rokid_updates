@@ -103,6 +103,7 @@ public final class MainActivity extends Activity {
             "Правая кнопка — меню и настройки,\n  в меню — назад\n" +
             "Запись: колесо — стоп, крутить — зум\n" +
             "Без кольца: тап по дужке — фото / ОК,\n  свайп — зум, «Назад» — меню\n" +
+            "Рамка = что попадёт в кадр, с зумом\n  уменьшается. Подогнать: «Масштаб\n  рамки»; картинка: «Вид на экране»\n" +
             "«Назад» в меню — выйти из приложения\n" +
             "\n" +
             "НАСТРОЙКИ\n" +
@@ -333,6 +334,8 @@ public final class MainActivity extends Activity {
         options.selectPhotoAspect(prefs.getInt("photo_aspect2", 0));
         options.selectZoomStep(prefs.getInt("zoom_step", 0));
         options.selectVideoAspect(prefs.getInt("video_aspect", 1));
+        options.frameOnly = prefs.getBoolean("frame_only", true);
+        options.selectFrameScale(prefs.getInt("frame_scale", CaptureOptions.FRAME_SCALE_DEFAULT_INDEX));
         options.selectPhotoSize(prefs.getInt("photo_size", 0));
         options.selectJpegQuality(prefs.getInt("jpeg_quality", CaptureOptions.JPEG_QUALITY_DEFAULT_INDEX));
         options.tapShutter = prefs.getBoolean("tap_shutter", true);
@@ -770,6 +773,8 @@ public final class MainActivity extends Activity {
                 .putInt("photo_aspect2", options.photoAspectIndex)
                 .putInt("zoom_step", options.zoomStepIndex)
                 .putInt("video_aspect", options.videoAspectIndex)
+                .putBoolean("frame_only", options.frameOnly)
+                .putInt("frame_scale", options.frameScaleIndex)
                 .putInt("photo_size", options.photoSizeIndex)
                 .putInt("jpeg_quality", options.jpegQualityIndex)
                 .putInt("fps", options.fps())
@@ -941,7 +946,7 @@ public final class MainActivity extends Activity {
     private void updateZoomUi() {
         if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", zoom));
         if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoom, ZOOM_MAX));
-        updatePhotoInfo();
+        updateOverlay();
     }
 
     private void updatePhotoInfo() {
@@ -973,7 +978,13 @@ public final class MainActivity extends Activity {
         // While a video setting is selected, the viewfinder shows the video frame instead of the photo one.
         boolean videoItem = settingsOpen && (settingsItem == CaptureOptions.ITEM_VIDEO_ASPECT
                 || settingsItem == CaptureOptions.ITEM_VIDEO_SIZE || settingsItem == CaptureOptions.ITEM_FPS);
-        if (overlay != null) overlay.setFrames(options.photoAspect(), options.videoViewAspect(), recording || videoItem);
+        if (overlay != null) {
+            overlay.setFrames(options.photoAspect(), options.videoViewAspect(), recording || videoItem);
+            // Frame only: the camera picture is hidden (still running for capture) and the
+            // outline shrinks with zoom, like the area that really goes into the file.
+            overlay.setFrameOnly(options.frameOnly, options.frameScale() / Math.max(1f, effectiveZoom()));
+        }
+        if (preview != null) preview.setAlpha(options.frameOnly ? 0f : 1f);
     }
 
     /** The always-visible one-line cheat sheet. */

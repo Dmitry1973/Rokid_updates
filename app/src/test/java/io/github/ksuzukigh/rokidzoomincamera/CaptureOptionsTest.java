@@ -103,12 +103,24 @@ public final class CaptureOptionsTest {
 
     @Test public void menuHasActionItemsAtTheEnd() {
         CaptureOptions o = new CaptureOptions();
-        assertEquals(13, CaptureOptions.ITEM_COUNT);
+        assertEquals(15, CaptureOptions.ITEM_COUNT);
         o.change(CaptureOptions.ITEM_SWIPE_DIR, 1);
         assertEquals("обратный", o.valueLabel(CaptureOptions.ITEM_SWIPE_DIR));
         org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_HELP));
         org.junit.Assert.assertTrue(CaptureOptions.isAction(CaptureOptions.ITEM_CLOSE));
         assertFalse(CaptureOptions.isAction(CaptureOptions.ITEM_JPEG_QUALITY));
         assertEquals("Закрыть меню", o.itemName(CaptureOptions.ITEM_CLOSE));
+    }
+
+    @Test public void frameOnlyModeAndScale() {
+        CaptureOptions o = new CaptureOptions();
+        org.junit.Assert.assertTrue(o.frameOnly);
+        assertEquals("только рамка", o.valueLabel(CaptureOptions.ITEM_VIEW_MODE));
+        assertEquals(1f, o.frameScale(), 0.001f);
+        o.change(CaptureOptions.ITEM_FRAME_SCALE, 1);
+        assertEquals(1.2f, o.frameScale(), 0.001f);
+        o.change(CaptureOptions.ITEM_VIEW_MODE, 1);
+        assertFalse(o.frameOnly);
+        assertEquals("картинка камеры", o.valueLabel(CaptureOptions.ITEM_VIEW_MODE));
     }
 }

@@ -20,11 +20,13 @@ final class CaptureOptions {
     static final int ITEM_TAP_SHUTTER = 6;
     static final int ITEM_PREVIEW_SIZE = 7;
     static final int ITEM_PREVIEW_SHIFT = 8;
-    static final int ITEM_SWIPE_DIR = 9;
-    static final int ITEM_ZOOM_STEP = 10;
-    static final int ITEM_HELP = 11;
-    static final int ITEM_CLOSE = 12;
-    static final int ITEM_COUNT = 13;
+    static final int ITEM_VIEW_MODE = 9;
+    static final int ITEM_FRAME_SCALE = 10;
+    static final int ITEM_SWIPE_DIR = 11;
+    static final int ITEM_ZOOM_STEP = 12;
+    static final int ITEM_HELP = 13;
+    static final int ITEM_CLOSE = 14;
+    static final int ITEM_COUNT = 15;
 
     /** Limit for the long side of saved photos, pixels; 0 = full size. */
     static final int[] PHOTO_SIZES = {0, 3000, 2000, 1280};
@@ -48,6 +50,12 @@ final class CaptureOptions {
     static final float[] VIDEO_ASPECTS = {0f, 16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 1f};
     private static final String[] VIDEO_ASPECT_LABELS = {
             "родной", "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт.", "1:1"};
+    /**
+     * Size of the 1x frame in "frame only" mode, percent of the picture area.
+     * Lets the frame be matched to what the eye sees through the glasses.
+     */
+    static final int[] FRAME_SCALES = {50, 70, 85, 100, 120, 150, 200, 300};
+    static final int FRAME_SCALE_DEFAULT_INDEX = 3;
     /** Zoom change per wheel click / swipe. */
     static final float[] ZOOM_STEPS = {0.1f, 0.2f, 0.5f};
 
@@ -62,6 +70,9 @@ final class CaptureOptions {
     boolean swipeReversed = false;
     int zoomStepIndex = 0;
     int videoAspectIndex = 0;
+    /** true = no camera picture on the HUD, only the outline of what gets captured. */
+    boolean frameOnly = true;
+    int frameScaleIndex = FRAME_SCALE_DEFAULT_INDEX;
     /** True when the camera picture is turned 90/270 degrees to be upright (set by the activity). */
     boolean cameraTurned = false;
     int previewSizeIndex = PREVIEW_SIZE_DEFAULT_INDEX;
@@ -149,6 +160,15 @@ final class CaptureOptions {
         return item == ITEM_HELP || item == ITEM_CLOSE;
     }
 
+    void selectFrameScale(int index) {
+        frameScaleIndex = clampIndex(index, FRAME_SCALES.length);
+    }
+
+    /** 1.0 = the 1x frame fills the picture area. */
+    float frameScale() {
+        return FRAME_SCALES[frameScaleIndex] / 100f;
+    }
+
     void selectVideoAspect(int index) {
         videoAspectIndex = clampIndex(index, VIDEO_ASPECTS.length);
     }
@@ -222,6 +242,10 @@ final class CaptureOptions {
             fpsIndex = wrap(fpsIndex + step, frameRates.size());
         } else if (item == ITEM_TAP_SHUTTER) {
             tapShutter = !tapShutter;
+        } else if (item == ITEM_VIEW_MODE) {
+            frameOnly = !frameOnly;
+        } else if (item == ITEM_FRAME_SCALE) {
+            frameScaleIndex = clampIndex(frameScaleIndex + step, FRAME_SCALES.length);
         } else if (item == ITEM_ZOOM_STEP) {
             zoomStepIndex = wrap(zoomStepIndex + step, ZOOM_STEPS.length);
         } else if (item == ITEM_SWIPE_DIR) {
@@ -246,6 +270,8 @@ final class CaptureOptions {
             case ITEM_PREVIEW_SHIFT: return "Высота картинки";
             case ITEM_SWIPE_DIR: return "Свайп зума";
             case ITEM_ZOOM_STEP: return "Шаг зума";
+            case ITEM_VIEW_MODE: return "Вид на экране";
+            case ITEM_FRAME_SCALE: return "Масштаб рамки";
             case ITEM_HELP: return "Справка";
             case ITEM_CLOSE: return "Закрыть меню";
             default: return "";
@@ -277,6 +303,8 @@ final class CaptureOptions {
             case ITEM_JPEG_QUALITY: return JPEG_QUALITIES[jpegQualityIndex] + "%";
             case ITEM_SWIPE_DIR: return swipeReversed ? "обратный" : "обычный";
             case ITEM_ZOOM_STEP: return String.format(Locale.US, "%.1f× за щелчок", zoomStep());
+            case ITEM_VIEW_MODE: return frameOnly ? "только рамка" : "картинка камеры";
+            case ITEM_FRAME_SCALE: return FRAME_SCALES[frameScaleIndex] + "%";
             case ITEM_HELP: return "нажать колесо";
             case ITEM_CLOSE: return "колесо / правая кн.";
             case ITEM_VIDEO_ASPECT: {

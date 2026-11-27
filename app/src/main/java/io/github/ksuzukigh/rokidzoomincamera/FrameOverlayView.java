@@ -27,6 +27,10 @@ final class FrameOverlayView extends View {
     /** Width / height of the video as viewed (16:9 wide, 9:16 tall). */
     private float videoAspect = 16f / 9f;
     private boolean recording;
+    private boolean frameOnly;
+    /** Frame-only mode: size of the frame relative to the picture area (calibration / zoom). */
+    private float frameScale = 1f;
+    private final Paint outlinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     FrameOverlayView(Context context) {
         super(context);
@@ -44,6 +48,9 @@ final class FrameOverlayView extends View {
         videoPaint.setStrokeWidth(3f * density);
         // Everything outside the frame that goes into the file is dimmed, so the
         // visible picture has the chosen shape (4:3, 16:9, 3:2, 1:1).
+        outlinePaint.setColor(Color.argb(255, 160, 255, 160));
+        outlinePaint.setStyle(Paint.Style.STROKE);
+        outlinePaint.setStrokeWidth(3f * density);
         maskPaint.setColor(Color.argb(205, 0, 0, 0));
         maskPaint.setStyle(Paint.Style.FILL);
     }
@@ -65,6 +72,16 @@ final class FrameOverlayView extends View {
         invalidate();
     }
 
+    /**
+     * Frame-only mode: no camera picture, just the outline of what gets captured.
+     * @param scale calibration divided by zoom; 1 = the whole picture area
+     */
+    void setFrameOnly(boolean enabled, float scale) {
+        frameOnly = enabled;
+        frameScale = scale;
+        invalidate();
+    }
+
     @Override protected void onDraw(Canvas canvas) {
         float density = getResources().getDisplayMetrics().density;
         float cx = getWidth() / 2f;
@@ -78,6 +95,17 @@ final class FrameOverlayView extends View {
 
         if (boxWidth <= 0f || boxHeight <= 0f) return;
         float inset = 3f * density;
+        if (frameOnly) {
+            float aspect = recording ? videoAspect : photoAspect;
+            float sw = boxWidth * frameScale;
+            float sh = boxHeight * frameScale;
+            float sl = boxLeft + (boxWidth - sw) / 2f;
+            float st = boxTop + (boxHeight - sh) / 2f;
+            float[] r = clip(PhotoCrop.fitFrame(sl, st, sw, sh, aspect), inset);
+            canvas.drawRect(r[0], r[1], r[2], r[3], outlinePaint);
+            if (recording) drawCorners(canvas, r, 26f * density);
+            return;
+        }
         float[] f = recording
                 ? PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, videoAspect)
                 : PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, photoAspect);

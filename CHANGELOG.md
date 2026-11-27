@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0-ru (2026-11-27)
+- New default view «только рамка» (frame only): the camera picture is hidden on the HUD
+  (the camera keeps running for capture); only a bright outline of what goes into the file
+  is drawn, in the photo format, or the video format while recording. The outline shrinks
+  with zoom, like the real captured area.
+- Settings «Вид на экране» (frame only / camera picture) and «Масштаб рамки» (50–300 %, size of
+  the 1× frame) to match the outline to what the eye sees through the glasses.
+
 ## 2.7.1-ru (2026-11-27)
 - Fixed: 16:9 and other non-native video shapes were saved rotated by 90°. The RV101 camera
   already turns the SurfaceTexture picture upright (the turn is in its transform matrix) and
