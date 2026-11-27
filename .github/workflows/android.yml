@@ -28,3 +28,4 @@ jobs:
           path: |
             app/build/outputs/apk/debug/app-debug.apk
             inputtest/build/outputs/apk/debug/inputtest-debug.apk
+            horizon/build/outputs/apk/debug/horizon-debug.apk

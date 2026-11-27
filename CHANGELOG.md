@@ -25,6 +25,32 @@
   selected in settings. Menu line «Видео получится: W×H».
 - HUD shows `ВИДЕО 16:9 1072p30` instead of a bare resolution; the format is in the file name.
 
+## Horizon 1.3 (2026-11-27)
+- Sensor list page, "save sensor list" menu item and the sensor list files removed
+  (the list was only needed once: the RV101 has no barometer). The wheel now only moves the menu selection.
+
+## Horizon 1.2 (2026-11-27)
+- Menu on OK (wheel press / right ring button / temple tap): "set zero here", "reset zero (factory)",
+  attitude source, altitude zero here / standard 1013.25, save sensor list, switch page, close.
+  Wheel moves the selection, Back closes the menu.
+- Slip/skid indicator (trapezoid under the roll pointer, G1000-style), heading (magnetic with a
+  magnetometer, otherwise relative), turn rate (°/s plus a bar with standard-rate 3°/s marks), G load.
+- With a barometer: ALT (ft and m, standard 1013.25 or relative), VS (fpm), hPa. The RV101 has no barometer.
+- Sensor list saved as a JPEG in DCIM/Camera the same way the camera saves photos (IS_PENDING),
+  named RokidHorizon_sensors_*.jpg; a save error is shown on screen.
+
+## Horizon 1.1 (2026-11-27)
+- PITCH / ROLL labels (small, above the big numbers), pressure in hPa.
+- Sensor list also saved as a PNG in DCIM/Camera (did not reach the phone gallery; replaced in 1.2).
+
+## Horizon 1.0 (2026-11-27) — module `horizon`, `kz.rokid.horizon`
+- Artificial horizon demo on the HUD: pitch and roll at the top, pitch ladder every 5°,
+  roll scale (0/10/20/30/45/60°), fixed aircraft symbol.
+- Sources: Game Rotation Vector → Rotation Vector → accelerometer + gyroscope → accelerometer.
+- Pressure in hPa when the glasses have a barometer.
+- List of all sensors on a second page; saved once to Download/Horizon_sensors_*.txt.
+- OK: zero on the horizon page, next source on the sensor page; wheel/swipe switches pages.
+
 ## 2.6.0-ru (2026-11-25)
 - Photo formats with orientation: full frame, 16:9 / 9:16, 4:3 / 3:4, 3:2 / 2:3, 1:1. 16:9 is
   always landscape, 9:16 always portrait (EXIF rotation is respected); the viewfinder frame
