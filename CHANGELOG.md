@@ -25,6 +25,10 @@
   selected in settings. Menu line «Видео получится: W×H».
 - HUD shows `ВИДЕО 16:9 1072p30` instead of a bare resolution; the format is in the file name.
 
+## Horizon 1.3 (2026-11-27)
+- Sensor list page, "save sensor list" menu item and the sensor list files removed
+  (the list was only needed once: the RV101 has no barometer). The wheel now only moves the menu selection.
+
 ## Horizon 1.2 (2026-11-27)
 - Menu on OK (wheel press / right ring button / temple tap): "set zero here", "reset zero (factory)",
   attitude source, altitude zero here / standard 1013.25, save sensor list, switch page, close.

@@ -1,44 +1,31 @@
 package kz.rokid.horizon;
 
 import android.app.Activity;
-import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
-import android.graphics.Typeface;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
-import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.MediaStore;
 import android.view.KeyEvent;
 import android.view.WindowManager;
 
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * Artificial horizon demo for Rokid Glasses: pitch / roll, slip, heading, turn rate,
- * G load from the IMU; baro altitude, vertical speed and hPa when there is a barometer;
- * a list of all sensors.
+ * G load from the IMU; baro altitude, vertical speed and hPa when there is a barometer.
  *
  * Controls (keys only, no double tap, no temple hold):
  *  - OK (ring wheel press, right ring button, temple tap): open the menu / run the item;
- *  - wheel / swipe: switch horizon / sensor list, in the menu move the selection;
+ *  - wheel / swipe: move the selection in the menu;
  *  - Back: close the menu, otherwise exit.
  *
  * No lambdas on purpose: the project must also build with plain javac + dx.
@@ -58,9 +45,7 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int M_SOURCE = 2;
     private static final int M_ALT_ZERO = 3;
     private static final int M_ALT_STD = 4;
-    private static final int M_SAVE = 5;
-    private static final int M_PAGE = 6;
-    private static final int M_CLOSE = 7;
+    private static final int M_CLOSE = 5;
     private final List<Integer> menuActions = new ArrayList<Integer>();
 
     private static final double STD_HPA = 1013.25;
@@ -74,7 +59,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private MediaSession mediaSession;
     private SharedPreferences prefs;
-    private String sensorReport = "";
 
     // attitude state
     private final float[] rot = new float[9];
@@ -95,7 +79,6 @@ public class MainActivity extends Activity implements SensorEventListener {
     private double vsLp;
     private double altZeroM = Double.NaN; // NaN = standard 1013.25
 
-    private long lastPageSwitch;
     private long lastMenuMove;
     private long swallowEnterUntil;
     private long lastRedraw;
@@ -128,13 +111,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         view.hasPressure = pressure != null;
         view.altRelative = !Double.isNaN(altZeroM);
         updateZeroNote();
-        buildSensorList();
-        // Save the sensor list once after installing this version.
-        String key = "savedList3";
-        if (!prefs.getBoolean(key, false)) {
-            if (saveSensorList()) prefs.edit().putBoolean(key, true).apply();
-        }
-        view.fileNote = prefs.getString("fileNote", null);
     }
 
     @Override
@@ -290,9 +266,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         haveUp = true;
         pitchRaw = Attitude.pitchDeg(upVec[0], upVec[1], upVec[2]);
         rollRaw = Attitude.rollDeg(upVec[0], upVec[1], upVec[2]);
-        view.up[0] = (float) upVec[0];
-        view.up[1] = (float) upVec[1];
-        view.up[2] = (float) upVec[2];
         view.pitch = pitchRaw - pitchZero;
         view.roll = Attitude.wrap180(rollRaw - rollZero);
         view.hasData = true;
@@ -326,118 +299,6 @@ public class MainActivity extends Activity implements SensorEventListener {
         updateZeroNote();
     }
 
-    // ------------------------------------------------------------------ sensor list
-
-    private static String typeName(Sensor s) {
-        String t = s.getStringType();
-        if (t == null) return String.valueOf(s.getType());
-        int dot = t.lastIndexOf('.');
-        return dot >= 0 ? t.substring(dot + 1) : t;
-    }
-
-    private void buildSensorList() {
-        List<Sensor> all = sm.getSensorList(Sensor.TYPE_ALL);
-        StringBuilder file = new StringBuilder();
-        file.append("Rokid sensors, ").append(Build.MODEL).append(" / ").append(Build.DISPLAY)
-                .append(", API ").append(Build.VERSION.SDK_INT).append('\n');
-        file.append("count: ").append(all.size()).append("\n\n");
-        for (int i = 0; i < all.size(); i++) {
-            Sensor s = all.get(i);
-            view.sensorLines.add(typeName(s) + " · " + s.getName());
-            file.append(String.format(Locale.US,
-                    "%2d. type=%d %s%s\n    %s | %s v%d\n    range=%.3f res=%.5f %.2fmA minDelay=%dus\n",
-                    i + 1, s.getType(), typeName(s), s.isWakeUpSensor() ? " (wakeup)" : "",
-                    s.getName(), s.getVendor(), s.getVersion(),
-                    s.getMaximumRange(), s.getResolution(), s.getPower(), s.getMinDelay()));
-        }
-        sensorReport = file.toString();
-    }
-
-    /** Saves the list as a JPEG in DCIM/Camera (synced to the phone like photos) and a .txt in Download. */
-    private boolean saveSensorList() {
-        String stamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        String name = "RokidHorizon_sensors_" + stamp;
-        String err = saveListPicture(name + ".jpg", sensorReport);
-        saveToDownloads(name + ".txt", sensorReport);
-        String note = err == null ? "список: галерея, " + name + ".jpg" : "не сохранилось: " + err;
-        prefs.edit().putString("fileNote", note).apply();
-        view.fileNote = note;
-        return err == null;
-    }
-
-    /** Returns null on success, otherwise a short error text. Same path and flow as the camera's photos. */
-    private String saveListPicture(String name, String text) {
-        Uri uri = null;
-        try {
-            String[] lines = text.split("\n");
-            int lineH = 30;
-            int width = 1200;
-            int height = Math.max(400, 40 + lines.length * lineH + 30);
-            Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            Canvas c = new Canvas(bmp);
-            c.drawColor(Color.BLACK);
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-            paint.setColor(Color.rgb(0, 255, 0));
-            paint.setTextSize(24f);
-            paint.setTypeface(Typeface.MONOSPACE);
-            float y = 40;
-            for (int i = 0; i < lines.length; i++) {
-                c.drawText(lines[i], 20, y, paint);
-                y += lineH;
-            }
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Images.Media.DISPLAY_NAME, name);
-            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-            values.put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera");
-            values.put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis());
-            values.put(MediaStore.Images.Media.IS_PENDING, 1);
-            uri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
-            if (uri == null) return "MediaStore отказал";
-            OutputStream out = getContentResolver().openOutputStream(uri, "w");
-            if (out == null) return "нет потока";
-            try {
-                bmp.compress(Bitmap.CompressFormat.JPEG, 95, out);
-            } finally {
-                out.close();
-                bmp.recycle();
-            }
-            ContentValues ready = new ContentValues();
-            ready.put(MediaStore.Images.Media.IS_PENDING, 0);
-            getContentResolver().update(uri, ready, null, null);
-            return null;
-        } catch (Throwable ex) {
-            if (uri != null) {
-                try {
-                    getContentResolver().delete(uri, null, null);
-                } catch (Throwable ignored) {
-                    // nothing more to do
-                }
-            }
-            String m = ex.getClass().getSimpleName();
-            return ex.getMessage() == null ? m : m + ": " + ex.getMessage();
-        }
-    }
-
-    private void saveToDownloads(String name, String text) {
-        try {
-            ContentValues values = new ContentValues();
-            values.put(MediaStore.Downloads.DISPLAY_NAME, name);
-            values.put(MediaStore.Downloads.MIME_TYPE, "text/plain");
-            values.put(MediaStore.Downloads.RELATIVE_PATH, "Download/");
-            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-            if (uri == null) return;
-            OutputStream out = getContentResolver().openOutputStream(uri);
-            if (out == null) return;
-            try {
-                out.write(text.getBytes("UTF-8"));
-            } finally {
-                out.close();
-            }
-        } catch (Exception ignored) {
-            // the picture is the main copy
-        }
-    }
-
     // ------------------------------------------------------------------ menu
 
     private void openMenu() {
@@ -450,8 +311,6 @@ public class MainActivity extends Activity implements SensorEventListener {
             addItem(M_ALT_ZERO, "Высота: 0 здесь");
             addItem(M_ALT_STD, "Высота: стандарт 1013.25");
         }
-        addItem(M_SAVE, "Сохранить список датчиков");
-        addItem(M_PAGE, view.page == HorizonView.PAGE_HORIZON ? "Показать список датчиков" : "Показать горизонт");
         addItem(M_CLOSE, "Закрыть");
         view.menuIndex = Math.min(view.menuIndex, view.menuItems.size() - 1);
         view.menuOpen = true;
@@ -506,14 +365,6 @@ public class MainActivity extends Activity implements SensorEventListener {
                 closeMenu();
                 flash("высота по 1013.25");
                 break;
-            case M_SAVE:
-                closeMenu();
-                flash(saveSensorList() ? "список сохранён в галерею" : "не сохранилось, см. страницу датчиков");
-                break;
-            case M_PAGE:
-                view.page = view.page == HorizonView.PAGE_HORIZON ? HorizonView.PAGE_SENSORS : HorizonView.PAGE_HORIZON;
-                closeMenu();
-                break;
             default:
                 closeMenu();
                 break;
@@ -552,13 +403,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             view.invalidate();
             return;
         }
-        if (now - lastPageSwitch < 600) {
-            lastPageSwitch = now;
-            return;
-        }
-        lastPageSwitch = now;
-        view.page = view.page == HorizonView.PAGE_HORIZON ? HorizonView.PAGE_SENSORS : HorizonView.PAGE_HORIZON;
-        view.invalidate();
+        // outside the menu the wheel does nothing
     }
 
     @Override

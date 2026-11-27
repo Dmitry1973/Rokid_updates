@@ -16,14 +16,10 @@ import java.util.Locale;
  * All text sits at the top of the screen: the bottom of the HUD is hard to read.
  */
 final class HorizonView extends View {
-    static final int PAGE_HORIZON = 0;
-    static final int PAGE_SENSORS = 1;
-
     private static final int GREEN = Color.rgb(0, 255, 0);
     private static final float PX_PER_DEG = 6f;
 
     // State set by the activity.
-    int page = PAGE_HORIZON;
     boolean hasData;
     double pitch;            // degrees, zeroed
     double roll;             // degrees, zeroed
@@ -38,12 +34,9 @@ final class HorizonView extends View {
     boolean altRelative;
     double vsMs = Double.NaN;
     String sourceName = "";
-    float[] up = new float[3];
     String zeroNote = "";
     String flash;
     long flashUntil;
-    final List<String> sensorLines = new ArrayList<String>();
-    String fileNote;
 
     // menu
     boolean menuOpen;
@@ -90,8 +83,7 @@ final class HorizonView extends View {
     @Override
     protected void onDraw(Canvas c) {
         super.onDraw(c);
-        if (page == PAGE_SENSORS) drawSensors(c);
-        else drawHorizon(c);
+        drawHorizon(c);
         if (menuOpen) drawMenu(c);
     }
 
@@ -237,39 +229,6 @@ final class HorizonView extends View {
             double tr2 = Math.max(-6, Math.min(6, turnRate));
             float tx = cx + (float) (tr2 / 3.0 * std);
             c.drawLine(cx, ty, tx, ty, stroke);
-        }
-    }
-
-    private void drawSensors(Canvas c) {
-        float w = getWidth();
-        float y = 32;
-        c.drawText("Датчики: " + sensorLines.size(), 12, y, mid);
-        y += 24;
-        c.drawText("колесо — горизонт   OK — меню", 12, y, small);
-        y += 22;
-        c.drawText("Источник: " + sourceName, 12, y, small);
-        y += 22;
-        c.drawText(String.format(Locale.US, "вверх (x,y,z): %+.2f %+.2f %+.2f", up[0], up[1], up[2]), 12, y, small);
-        y += 22;
-        c.drawText(hasPressure ? String.format(Locale.US, "давление: %.2f hPa", pressureHpa) : "датчика давления нет", 12, y, small);
-        y += 22;
-        if (fileNote != null) {
-            c.drawText(fileNote, 12, y, small);
-            y += 22;
-        }
-        long now = System.currentTimeMillis();
-        if (flash != null && now < flashUntil) {
-            c.drawText(flash, 12, y, mid);
-            y += 28;
-        }
-        y += 6;
-        c.drawLine(12, y - 14, w - 12, y - 14, thin);
-        for (int i = 0; i < sensorLines.size(); i++) {
-            if (y > getHeight() - 4) break;
-            String s = sensorLines.get(i);
-            while (s.length() > 4 && small.measureText(s) > w - 24) s = s.substring(0, s.length() - 2);
-            c.drawText(s, 12, y, small);
-            y += 22;
         }
     }
 
