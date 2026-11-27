@@ -24,6 +24,7 @@ final class FrameOverlayView extends View {
     private float previewAspect = 4f / 3f;
     /** Width / height as viewed; 0 = the whole frame. */
     private float photoAspect = 0f;
+    /** Width / height of the video as viewed (16:9 wide, 9:16 tall). */
     private float videoAspect = 16f / 9f;
     private boolean recording;
 
@@ -78,7 +79,7 @@ final class FrameOverlayView extends View {
         if (boxWidth <= 0f || boxHeight <= 0f) return;
         float inset = 3f * density;
         float[] f = recording
-                ? PhotoCrop.fitFrameAlongLongSide(boxLeft, boxTop, boxWidth, boxHeight, videoAspect)
+                ? PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, videoAspect)
                 : PhotoCrop.fitFrame(boxLeft, boxTop, boxWidth, boxHeight, photoAspect);
         float w = getWidth();
         float h = getHeight();

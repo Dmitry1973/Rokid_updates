@@ -164,6 +164,10 @@ public final class MainActivity extends Activity {
     private boolean stopVideoRequested;
     private boolean stopVideoScheduled;
     private boolean videoStartPending;
+    /** Renders the camera into the recorder in the chosen shape; null for native video. */
+    private VideoGlRenderer videoRenderer;
+    private boolean recordingViaGl;
+    private boolean forceNativeVideoOnce;
     private boolean buttonReceiverRegistered;
     private boolean batteryReceiverRegistered;
     private boolean availabilityRegistered;
@@ -328,6 +332,7 @@ public final class MainActivity extends Activity {
         // 2.6: formats now carry orientation (16:9 vs 9:16); old indexes meant other formats.
         options.selectPhotoAspect(prefs.getInt("photo_aspect2", 0));
         options.selectZoomStep(prefs.getInt("zoom_step", 0));
+        options.selectVideoAspect(prefs.getInt("video_aspect", 1));
         options.selectPhotoSize(prefs.getInt("photo_size", 0));
         options.selectJpegQuality(prefs.getInt("jpeg_quality", CaptureOptions.JPEG_QUALITY_DEFAULT_INDEX));
         options.tapShutter = prefs.getBoolean("tap_shutter", true);
@@ -695,6 +700,7 @@ public final class MainActivity extends Activity {
             maximumZoom = max == null ? 1f : max;
             Integer orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
             sensorOrientation = orientation == null ? 0 : orientation;
+            options.cameraTurned = sensorOrientation == 90 || sensorOrientation == 270;
             android.hardware.camera2.params.StreamConfigurationMap map =
                     characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) throw new CameraAccessException(CameraAccessException.CAMERA_ERROR);
@@ -763,6 +769,7 @@ public final class MainActivity extends Activity {
         SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putInt("photo_aspect2", options.photoAspectIndex)
                 .putInt("zoom_step", options.zoomStepIndex)
+                .putInt("video_aspect", options.videoAspectIndex)
                 .putInt("photo_size", options.photoSizeIndex)
                 .putInt("jpeg_quality", options.jpegQualityIndex)
                 .putInt("fps", options.fps())
@@ -941,12 +948,13 @@ public final class MainActivity extends Activity {
         if (photoInfo == null) return;
         StringBuilder sb = new StringBuilder();
         int[] video = options.videoSize();
-        String videoLabel = video == null ? "—" : MediaLabels.video(video[0], video[1], options.fps());
+        int[] expectedVideo = expectedVideoSize();
+        String videoLabel = expectedVideo == null ? "—" : videoTitle(expectedVideo, options.fps());
         if (recording) {
             long bytes = -1L;
             try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
             int[] rec = recordingSize;
-            sb.append("REC ").append(rec == null ? videoLabel : MediaLabels.video(rec[0], rec[1], recordingFps));
+            sb.append("REC ").append(rec == null ? videoLabel : videoTitle(rec, recordingFps));
             if (bytes > 0) sb.append(" · ").append(MediaLabels.fileSize(bytes));
         } else {
             int[] dims = expectedPhotoDims();
@@ -962,7 +970,10 @@ public final class MainActivity extends Activity {
 
     private void updateOverlay() {
         updatePhotoInfo();
-        if (overlay != null) overlay.setFrames(options.photoAspect(), options.videoAspect(), recording);
+        // While a video setting is selected, the viewfinder shows the video frame instead of the photo one.
+        boolean videoItem = settingsOpen && (settingsItem == CaptureOptions.ITEM_VIDEO_ASPECT
+                || settingsItem == CaptureOptions.ITEM_VIDEO_SIZE || settingsItem == CaptureOptions.ITEM_FPS);
+        if (overlay != null) overlay.setFrames(options.photoAspect(), options.videoViewAspect(), recording || videoItem);
     }
 
     /** The always-visible one-line cheat sheet. */
@@ -1146,8 +1157,20 @@ public final class MainActivity extends Activity {
             return;
         }
         final int fps = options.fps();
+        final int rotation = jpegOrientation();
+        float format = options.videoFormat();
+        boolean nativeShape = format <= 0f || Math.abs(format - options.nativeVideoAspect()) < 0.02f;
+        final boolean viaGl = !nativeShape && !forceNativeVideoOnce;
+        forceNativeVideoOnce = false;
+        // Native: the camera size as is, turned by the orientation hint.
+        // Other shapes: a camera stream is drawn upright + cropped into an encoder of this size.
+        final int[] source = viaGl ? VideoGeometry.chooseSource(options.allVideoSizes(), rotation, format,
+                Math.max(size[0], size[1])) : size;
+        final int[] encoded = viaGl ? VideoGeometry.outputSize(source[0], source[1], rotation, format,
+                Math.max(size[0], size[1])) : size;
+        recordingViaGl = viaGl;
         recordingFps = fps;
-        recordingSize = size;
+        recordingSize = viaGl ? encoded : VideoGeometry.upright(size[0], size[1], rotation);
         videoStartPending = false;
         recording = true;
         recorderStarted = false;
@@ -1160,7 +1183,9 @@ public final class MainActivity extends Activity {
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Video.Media.DISPLAY_NAME, PHOTO_FILE_PREFIX + timestamp() + "_" +
-                    String.format(Locale.US, "%.1fx_%dp%d.mp4", effectiveZoom(), size[1], fps));
+                    String.format(Locale.US, "%.1fx_%s_%dp%d.mp4", effectiveZoom(),
+                            CaptureOptions.aspectName(viaGl ? options.videoFormat() : options.nativeVideoAspect()).replace(':', 'x'),
+                            Math.min(encoded[0], encoded[1]), fps));
             values.put(MediaStore.Video.Media.MIME_TYPE, "video/mp4");
             values.put(MediaStore.Video.Media.RELATIVE_PATH, MediaPaths.VIDEO_PATH);
             values.put(MediaStore.Video.Media.IS_PENDING, 1);
@@ -1168,7 +1193,7 @@ public final class MainActivity extends Activity {
             if (pendingVideo == null) throw new IllegalStateException("MediaStore insert failed");
             videoFile = getContentResolver().openFileDescriptor(pendingVideo, "w");
             if (videoFile == null) throw new IllegalStateException("MediaStore file failed");
-            long bitrate = Math.max(4_000_000L, Math.min(40_000_000L, (long) (size[0] * (long) size[1] * fps * 0.17)));
+            long bitrate = Math.max(4_000_000L, Math.min(40_000_000L, (long) (encoded[0] * (long) encoded[1] * fps * 0.17)));
             recorder = new MediaRecorder();
             recorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
             recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -1180,9 +1205,9 @@ public final class MainActivity extends Activity {
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
             recorder.setVideoEncodingBitRate((int) bitrate);
             recorder.setVideoFrameRate(fps);
-            recorder.setVideoSize(size[0], size[1]);
+            recorder.setVideoSize(encoded[0], encoded[1]);
             recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            recorder.setOrientationHint(jpegOrientation());
+            recorder.setOrientationHint(viaGl ? 0 : rotation);
             recorder.prepare();
 
             session.close();
@@ -1191,11 +1216,20 @@ public final class MainActivity extends Activity {
             runOnUiThread(layoutPreview);
             Surface previewSurface = new Surface(texture);
             Surface recordSurface = recorder.getSurface();
+            if (viaGl) {
+                int[] up = VideoGeometry.upright(source[0], source[1], rotation);
+                videoRenderer = new VideoGlRenderer(recordSurface, encoded[0], encoded[1], source[0], source[1],
+                        VideoGeometry.texCoords(rotation, options.videoFormat(), up[0], up[1]));
+                recordSurface = videoRenderer.start();
+                Log.i(TAG, "Video via GL: source " + source[0] + "x" + source[1] + " rot " + rotation +
+                        " -> " + encoded[0] + "x" + encoded[1]);
+            }
+            final Surface cameraRecordSurface = recordSurface;
             repeatingBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
             repeatingBuilder.addTarget(previewSurface);
-            repeatingBuilder.addTarget(recordSurface);
+            repeatingBuilder.addTarget(cameraRecordSurface);
             setVideoControls(repeatingBuilder, fps);
-            device.createCaptureSession(Arrays.asList(previewSurface, recordSurface), new CameraCaptureSession.StateCallback() {
+            device.createCaptureSession(Arrays.asList(previewSurface, cameraRecordSurface), new CameraCaptureSession.StateCallback() {
                 @Override public void onConfigured(CameraCaptureSession value) {
                     if (!recording || camera == null) { value.close(); return; }
                     session = value;
@@ -1211,7 +1245,7 @@ public final class MainActivity extends Activity {
                                 recordingIndicator.setVisibility(View.VISIBLE);
                                 mainHandler.removeCallbacks(updateRecordingClock);
                                 mainHandler.post(updateRecordingClock);
-                                setStatus("Запись " + MediaLabels.video(size[0], size[1], fps));
+                                setStatus("Запись " + videoTitle(recordingSize, fps));
                                 if (stopVideoRequested) stopVideo();
                             }
                         });
@@ -1221,7 +1255,8 @@ public final class MainActivity extends Activity {
                     }
                 }
                 @Override public void onConfigureFailed(CameraCaptureSession value) {
-                    Log.e(TAG, "Recording session configuration failed for " + size[0] + "x" + size[1] + "@" + fps);
+                    Log.e(TAG, "Recording session configuration failed for " + encoded[0] + "x" + encoded[1] + "@" + fps
+                            + (viaGl ? " via GL from " + source[0] + "x" + source[1] : ""));
                     failVideo();
                 }
             }, cameraHandler);
@@ -1259,6 +1294,7 @@ public final class MainActivity extends Activity {
         boolean saved = false;
         long seconds = Math.max(0L, (SystemClock.elapsedRealtime() - videoStartedAt) / 1000L);
         try {
+            if (videoRenderer != null) videoRenderer.stopDrawing();
             if (recorder != null) {
                 recorder.stop();
                 saved = true;
@@ -1269,7 +1305,7 @@ public final class MainActivity extends Activity {
         long bytes = -1L;
         try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
         if (saved && recordingSize != null) {
-            lastFileInfo = MediaLabels.video(recordingSize[0], recordingSize[1], recordingFps)
+            lastFileInfo = videoTitle(recordingSize, recordingFps)
                     + " · " + MediaLabels.fileSize(bytes) + " · " + RecordingDisplay.label(seconds).replace("● ЗАПИСЬ ", "");
         }
         releaseRecorder(saved);
@@ -1299,10 +1335,37 @@ public final class MainActivity extends Activity {
                 recordingIndicator.setVisibility(View.GONE);
                 updateOverlay();
                 updateHint();
-                setStatus("Видео не запустилось.\nПопробуйте другое разрешение или к/с");
+                if (recordingViaGl) {
+                    recordingViaGl = false;
+                    forceNativeVideoOnce = true;
+                    videoStartPending = true;
+                    setStatus("Формат " + CaptureOptions.aspectName(options.videoFormat()) +
+                            " не запустился.\nПишу в родном формате " + CaptureOptions.aspectName(options.nativeVideoAspect()));
+                } else {
+                    setStatus("Видео не запустилось.\nПопробуйте другое разрешение или к/с");
+                }
                 returnToPreviewLater();
             }
         });
+    }
+
+    /** Size {width, height} as viewed of the next video with the current settings. */
+    private int[] expectedVideoSize() {
+        int[] size = options.videoSize();
+        if (size == null) return null;
+        int rotation = getDisplay() == null ? sensorOrientation : jpegOrientation();
+        float format = options.videoFormat();
+        if (format <= 0f || Math.abs(format - options.nativeVideoAspect()) < 0.02f) {
+            return VideoGeometry.upright(size[0], size[1], rotation);
+        }
+        int maxLong = Math.max(size[0], size[1]);
+        int[] source = VideoGeometry.chooseSource(options.allVideoSizes(), rotation, format, maxLong);
+        return VideoGeometry.outputSize(source[0], source[1], rotation, format, maxLong);
+    }
+
+    /** "16:9 1080p30" style title of the recorded video. */
+    private static String videoTitle(int[] size, int fps) {
+        return CaptureOptions.aspectName((float) size[0] / size[1]) + " " + MediaLabels.video(size[0], size[1], fps);
     }
 
     private void returnToPreviewLater() {
@@ -1349,6 +1412,10 @@ public final class MainActivity extends Activity {
     }
 
     private void releaseRecorder(boolean keepFile) {
+        if (videoRenderer != null) {
+            videoRenderer.release();
+            videoRenderer = null;
+        }
         if (recorder != null) {
             try { recorder.reset(); } catch (RuntimeException ignored) {}
             recorder.release();
@@ -1417,6 +1484,11 @@ public final class MainActivity extends Activity {
             sb.append('\n');
         }
         sb.append("Фото получится: ").append(expectedPhotoSize()).append('\n');
+        int[] video = expectedVideoSize();
+        if (video != null) {
+            sb.append("Видео получится: ").append(video[0]).append('×').append(video[1])
+                    .append(" (").append(CaptureOptions.aspectName((float) video[0] / video[1])).append(")\n");
+        }
         if (CaptureOptions.isAction(settingsItem)) {
             sb.append("нажать колесо: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
                     .append(" · крутить: дальше");

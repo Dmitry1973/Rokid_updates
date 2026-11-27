@@ -14,16 +14,17 @@ final class CaptureOptions {
     static final int ITEM_PHOTO_ASPECT = 0;
     static final int ITEM_PHOTO_SIZE = 1;
     static final int ITEM_JPEG_QUALITY = 2;
-    static final int ITEM_VIDEO_SIZE = 3;
-    static final int ITEM_FPS = 4;
-    static final int ITEM_TAP_SHUTTER = 5;
-    static final int ITEM_PREVIEW_SIZE = 6;
-    static final int ITEM_PREVIEW_SHIFT = 7;
-    static final int ITEM_SWIPE_DIR = 8;
-    static final int ITEM_ZOOM_STEP = 9;
-    static final int ITEM_HELP = 10;
-    static final int ITEM_CLOSE = 11;
-    static final int ITEM_COUNT = 12;
+    static final int ITEM_VIDEO_ASPECT = 3;
+    static final int ITEM_VIDEO_SIZE = 4;
+    static final int ITEM_FPS = 5;
+    static final int ITEM_TAP_SHUTTER = 6;
+    static final int ITEM_PREVIEW_SIZE = 7;
+    static final int ITEM_PREVIEW_SHIFT = 8;
+    static final int ITEM_SWIPE_DIR = 9;
+    static final int ITEM_ZOOM_STEP = 10;
+    static final int ITEM_HELP = 11;
+    static final int ITEM_CLOSE = 12;
+    static final int ITEM_COUNT = 13;
 
     /** Limit for the long side of saved photos, pixels; 0 = full size. */
     static final int[] PHOTO_SIZES = {0, 3000, 2000, 1280};
@@ -43,6 +44,10 @@ final class CaptureOptions {
     private static final String[] PHOTO_ASPECT_LABELS = {
             "весь кадр", "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт.",
             "3:2 гориз.", "2:3 верт.", "1:1"};
+    /** Width / height of the video as viewed; 0 = as the camera gives it (no re-rendering). */
+    static final float[] VIDEO_ASPECTS = {0f, 16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 1f};
+    private static final String[] VIDEO_ASPECT_LABELS = {
+            "родной", "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт.", "1:1"};
     /** Zoom change per wheel click / swipe. */
     static final float[] ZOOM_STEPS = {0.1f, 0.2f, 0.5f};
 
@@ -56,6 +61,9 @@ final class CaptureOptions {
     boolean tapShutter = true;
     boolean swipeReversed = false;
     int zoomStepIndex = 0;
+    int videoAspectIndex = 0;
+    /** True when the camera picture is turned 90/270 degrees to be upright (set by the activity). */
+    boolean cameraTurned = false;
     int previewSizeIndex = PREVIEW_SIZE_DEFAULT_INDEX;
     int previewShiftIndex = PREVIEW_SHIFT_DEFAULT_INDEX;
 
@@ -141,6 +149,30 @@ final class CaptureOptions {
         return item == ITEM_HELP || item == ITEM_CLOSE;
     }
 
+    void selectVideoAspect(int index) {
+        videoAspectIndex = clampIndex(index, VIDEO_ASPECTS.length);
+    }
+
+    /** Chosen video shape (width / height as viewed); 0 = native. */
+    float videoFormat() {
+        return VIDEO_ASPECTS[videoAspectIndex];
+    }
+
+    /** Width / height of the native video as viewed (the camera size turned upright). */
+    float nativeVideoAspect() {
+        int[] size = videoSize();
+        if (size == null) return cameraTurned ? 9f / 16f : 16f / 9f;
+        int w = Math.max(size[0], size[1]);
+        int h = Math.min(size[0], size[1]);
+        return cameraTurned ? (float) h / w : (float) w / h;
+    }
+
+    /** Width / height of the video file as viewed, whatever is chosen. */
+    float videoViewAspect() {
+        float f = videoFormat();
+        return f > 0f ? f : nativeVideoAspect();
+    }
+
     float zoomStep() {
         return ZOOM_STEPS[zoomStepIndex];
     }
@@ -151,6 +183,11 @@ final class CaptureOptions {
 
     float photoAspect() {
         return PHOTO_ASPECTS[photoAspectIndex];
+    }
+
+    /** All recorder sizes {width, height}, largest first. */
+    List<int[]> allVideoSizes() {
+        return Collections.unmodifiableList(videoSizes);
     }
 
     int[] videoSize() {
@@ -177,6 +214,8 @@ final class CaptureOptions {
         } else if (item == ITEM_JPEG_QUALITY) {
             // forward = better quality
             jpegQualityIndex = clampIndex(jpegQualityIndex - step, JPEG_QUALITIES.length);
+        } else if (item == ITEM_VIDEO_ASPECT) {
+            videoAspectIndex = wrap(videoAspectIndex + step, VIDEO_ASPECTS.length);
         } else if (item == ITEM_VIDEO_SIZE && !videoSizes.isEmpty()) {
             videoSizeIndex = wrap(videoSizeIndex + step, videoSizes.size());
         } else if (item == ITEM_FPS) {
@@ -199,6 +238,7 @@ final class CaptureOptions {
             case ITEM_PHOTO_ASPECT: return "Формат ФОТО";
             case ITEM_PHOTO_SIZE: return "Размер ФОТО";
             case ITEM_JPEG_QUALITY: return "Качество JPEG";
+            case ITEM_VIDEO_ASPECT: return "Формат ВИДЕО";
             case ITEM_VIDEO_SIZE: return "Разрешение ВИДЕО";
             case ITEM_FPS: return "Кадров/с ВИДЕО";
             case ITEM_TAP_SHUTTER: return "Съёмка тапом";
@@ -239,6 +279,10 @@ final class CaptureOptions {
             case ITEM_ZOOM_STEP: return String.format(Locale.US, "%.1f× за щелчок", zoomStep());
             case ITEM_HELP: return "нажать колесо";
             case ITEM_CLOSE: return "колесо / правая кн.";
+            case ITEM_VIDEO_ASPECT: {
+                if (videoAspectIndex != 0) return VIDEO_ASPECT_LABELS[videoAspectIndex];
+                return "родной " + aspectName(nativeVideoAspect());
+            }
             case ITEM_VIDEO_SIZE: {
                 int[] s = videoSize();
                 return s == null ? "—" : String.format(Locale.US, "%d×%d", s[0], s[1]);
@@ -252,6 +296,16 @@ final class CaptureOptions {
             }
             default: return "";
         }
+    }
+
+    /** "16:9", "9:16", "4:3", ... for known shapes. */
+    static String aspectName(float aspect) {
+        float[] values = {16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
+        String[] names = {"16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "1:1"};
+        for (int i = 0; i < values.length; i++) {
+            if (Math.abs(aspect - values[i]) < 0.02f) return names[i];
+        }
+        return String.format(Locale.US, "%.2f", aspect);
     }
 
     private static int wrap(int value, int size) {
