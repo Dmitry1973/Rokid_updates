@@ -21,7 +21,6 @@ import java.nio.file.Files;
  */
 final class PhotoProcessor {
     private static final String TAG = "RokidZoomRu";
-    private static final int JPEG_QUALITY = 95;
     private static final String[] EXIF_TAGS = {
             ExifInterface.TAG_ORIENTATION,
             ExifInterface.TAG_DATETIME,
@@ -66,18 +65,30 @@ final class PhotoProcessor {
 
     private PhotoProcessor() {}
 
-    static Result process(byte[] jpeg, float zoom, float aspect, File cacheDir) {
+    /**
+     * @param maxLongSide limit for the long side of the saved photo, 0 = no limit
+     * @param quality     JPEG quality 1..100 used when the photo has to be re-encoded
+     */
+    static Result process(byte[] jpeg, float zoom, float aspect, int maxLongSide, int quality,
+                          File cacheDir) {
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, bounds);
         int rawWidth = bounds.outWidth;
         int rawHeight = bounds.outHeight;
-        int[] crop = PhotoCrop.crop(rawWidth, rawHeight, zoom, aspect);
-        if (crop == null) return new Result(jpeg, rawWidth, rawHeight, false);
+        int[] crop = PhotoCrop.crop(rawWidth, rawHeight, zoom, aspect, isRotated(jpeg));
+        int[] region = crop == null ? new int[]{0, 0, rawWidth, rawHeight} : crop;
+        int regionWidth = region[2] - region[0];
+        int regionHeight = region[3] - region[1];
+        int[] target = PhotoCrop.limitSize(regionWidth, regionHeight, maxLongSide);
+        boolean resize = target[0] != regionWidth || target[1] != regionHeight;
+        // Nothing to do: the camera already encoded the full frame at the chosen quality.
+        if (crop == null && !resize) return new Result(jpeg, rawWidth, rawHeight, false);
+        int q = Math.max(1, Math.min(100, quality));
 
         Bitmap.Config[] configs = {Bitmap.Config.ARGB_8888, Bitmap.Config.RGB_565};
         for (Bitmap.Config config : configs) {
-            Bitmap region = null;
+            Bitmap bitmap = null;
             File temp = null;
             try {
                 @SuppressWarnings("deprecation")
@@ -85,33 +96,52 @@ final class PhotoProcessor {
                         BitmapRegionDecoder.newInstance(jpeg, 0, jpeg.length, false);
                 BitmapFactory.Options options = new BitmapFactory.Options();
                 options.inPreferredConfig = config;
-                region = decoder.decodeRegion(new Rect(crop[0], crop[1], crop[2], crop[3]), options);
+                options.inSampleSize = PhotoCrop.sampleSize(
+                        Math.max(regionWidth, regionHeight), Math.max(target[0], target[1]));
+                bitmap = decoder.decodeRegion(new Rect(region[0], region[1], region[2], region[3]), options);
                 decoder.recycle();
-                if (region == null) throw new IOException("decodeRegion returned null");
+                if (bitmap == null) throw new IOException("decodeRegion returned null");
+                if (bitmap.getWidth() != target[0] || bitmap.getHeight() != target[1]) {
+                    Bitmap scaled = Bitmap.createScaledBitmap(bitmap, target[0], target[1], true);
+                    if (scaled != bitmap) bitmap.recycle();
+                    bitmap = scaled;
+                }
                 temp = File.createTempFile("crop", ".jpg", cacheDir);
                 try (FileOutputStream output = new FileOutputStream(temp)) {
-                    if (!region.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)) {
+                    if (!bitmap.compress(Bitmap.CompressFormat.JPEG, q, output)) {
                         throw new IOException("JPEG compression failed");
                     }
                 }
-                int width = region.getWidth();
-                int height = region.getHeight();
-                region.recycle();
-                region = null;
+                int width = bitmap.getWidth();
+                int height = bitmap.getHeight();
+                bitmap.recycle();
+                bitmap = null;
                 copyExif(jpeg, temp);
                 byte[] result = Files.readAllBytes(temp.toPath());
                 return new Result(result, width, height, true);
             } catch (OutOfMemoryError error) {
-                Log.w(TAG, "Out of memory while cropping with " + config + ", retrying", error);
+                Log.w(TAG, "Out of memory while processing with " + config + ", retrying", error);
             } catch (Exception error) {
-                Log.e(TAG, "Photo crop failed; saving the full frame", error);
+                Log.e(TAG, "Photo processing failed; saving the full frame", error);
                 break;
             } finally {
-                if (region != null) region.recycle();
+                if (bitmap != null) bitmap.recycle();
                 if (temp != null && !temp.delete()) temp.deleteOnExit();
             }
         }
         return new Result(jpeg, rawWidth, rawHeight, false);
+    }
+
+    /** True when EXIF says the picture is viewed turned by 90/270 degrees. */
+    static boolean isRotated(byte[] jpeg) {
+        try {
+            ExifInterface exif = new ExifInterface(new ByteArrayInputStream(jpeg));
+            int o = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            return o == ExifInterface.ORIENTATION_ROTATE_90 || o == ExifInterface.ORIENTATION_ROTATE_270
+                    || o == ExifInterface.ORIENTATION_TRANSPOSE || o == ExifInterface.ORIENTATION_TRANSVERSE;
+        } catch (Exception error) {
+            return false;
+        }
     }
 
     private static void copyExif(byte[] source, File target) {

@@ -13,6 +13,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -25,6 +26,8 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
+import android.media.session.MediaSession;
+import android.media.session.PlaybackState;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Bundle;
@@ -60,6 +63,13 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * ZOOM Камера RU. All on-screen text (zoom, hints, status, menu, help) lives in
+ * the upper part of the HUD and does not move with the picture, because the
+ * bottom edge of the RV101 display is hard to read.
+ *
+ * No lambdas on purpose: the project must also build with plain javac + dx.
+ */
 public final class MainActivity extends Activity {
     private static final String TAG = "RokidZoomRu";
     private static final int CAMERA_PERMISSION = 7;
@@ -67,13 +77,45 @@ public final class MainActivity extends Activity {
     private static final long TOUCH_BUTTON_SUPPRESSION_MS = 1200L;
     private static final long RECONNECT_DELAY_MS = 2000L;
     private static final long BUTTON_CONFLICT_WINDOW_MS = 4000L;
-    private static final float[] ZOOM_STEPS = {1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f};
+    private static final long STATUS_VISIBLE_MS = 4000L;
+    private static final float ZOOM_MAX = 4f;
+    private static final String[] ACTIONS = {"Настройки фото и видео", "Записать видео", "Справка", "Выйти из приложения", "Отмена"};
+    private static final int ACT_SETTINGS = 0, ACT_VIDEO = 1, ACT_HELP = 2, ACT_EXIT = 3, ACT_CANCEL = 4;
     private static final String BUTTON_DOWN = "com.android.action.ACTION_SPRITE_BUTTON_DOWN";
     private static final String BUTTON_UP = "com.android.action.ACTION_SPRITE_BUTTON_UP";
     private static final String BUTTON_LONG = "com.android.action.ACTION_SPRITE_BUTTON_LONG_PRESS";
     private static final String BUTTON_VERY_LONG = "com.android.action.ACTION_SPRITE_BUTTON_VERY_VERY_LONG_PRESS";
     private static final String PREFS = "settings";
+    private static final String PREF_HELP_SEEN = "help_seen_v21";
     private static final String PHOTO_FILE_PREFIX = "RokidZoomRu_";
+    private static final int GREEN = Color.rgb(140, 255, 140);
+    private static final Comparator<Size> BY_AREA = new Comparator<Size>() {
+        @Override public int compare(Size a, Size b) {
+            return Long.compare((long) a.getWidth() * a.getHeight(), (long) b.getWidth() * b.getHeight());
+        }
+    };
+
+    static final String HELP_TEXT =
+            "КОЛЬЦО (как мышь)\n" +
+            "Нажать колесо — фото / ОК\n" +
+            "Крутить колесо — зум / выбор\n" +
+            "  (шаг зума 0.1×, меняется в настройках)\n" +
+            "Правая кнопка — меню и настройки,\n  в меню — назад\n" +
+            "Запись: колесо — стоп, крутить — зум\n" +
+            "Без кольца: тап по дужке — фото / ОК,\n  свайп — зум, «Назад» — меню\n" +
+            "Рамка = что попадёт в кадр, с зумом\n  уменьшается. Подогнать: «Масштаб\n  рамки»; картинка: «Вид на экране»\n" +
+            "«Назад» в меню — выйти из приложения\n" +
+            "\n" +
+            "НАСТРОЙКИ\n" +
+            "Нажать колесо — следующий пункт\n" +
+            "Крутить колесо — изменить\n" +
+            "Правая кнопка — сохранить и выйти\n" +
+            "\n" +
+            "Левую кнопку кольца и кнопку\n" +
+            "на очках не жать: их забирает\n" +
+            "системная камера.\n" +
+            "\n" +
+            "Колесо или правая кнопка — закрыть";
 
     private final Handler mainHandler = new Handler();
     private final CaptureOptions options = new CaptureOptions();
@@ -82,7 +124,13 @@ public final class MainActivity extends Activity {
     private TextureView preview;
     private FrameOverlayView overlay;
     private TextView zoomLabel;
+    private TextView zoomBar;
+    private TextView photoInfo;
+    private TextView zoomFlash;
+    private TextView hintLabel;
     private TextView statusLabel;
+    private TextView menuPanel;
+    private TextView helpPanel;
     private TextView recordingIndicator;
     private TextView batteryLabel;
     private HandlerThread cameraThread;
@@ -94,27 +142,43 @@ public final class MainActivity extends Activity {
     private CaptureRequest.Builder repeatingBuilder;
     private ImageReader imageReader;
     private Size previewSize;
+    private Size photoSize;
     private Rect sensorRect;
     private float maximumZoom = 1f;
     private int sensorOrientation;
     private boolean videoStabilizationSupported;
     private final List<Integer> fixedFpsRanges = new ArrayList<>();
-    private int zoomIndex = 0;
+    private float zoom = 1f;
     private boolean opening;
     private boolean resumed;
     private volatile boolean takingPhoto;
     private float photoZoom = 1f;
     private float photoAspect = 4f / 3f;
+    private int photoMaxSide;
+    private int photoQuality = 95;
     private boolean recording;
+    private int recordingFps = 30;
+    private long suppressEnterUntil;
+    private int[] recordingSize;
+    private volatile String lastFileInfo;
     private boolean recorderStarted;
     private boolean stopVideoRequested;
     private boolean stopVideoScheduled;
     private boolean videoStartPending;
+    /** Renders the camera into the recorder in the chosen shape; null for native video. */
+    private VideoGlRenderer videoRenderer;
+    private boolean recordingViaGl;
+    private boolean forceNativeVideoOnce;
     private boolean buttonReceiverRegistered;
     private boolean batteryReceiverRegistered;
     private boolean availabilityRegistered;
     private boolean userLeaving;
     private boolean settingsOpen;
+    private boolean helpOpen;
+    private boolean actionsOpen;
+    private int actionItem;
+    private final InputArbiter arbiter = new InputArbiter();
+    private boolean helpFromMenu;
     private int settingsItem;
     private long videoStartedAt;
     private boolean longPressHandled;
@@ -127,25 +191,42 @@ public final class MainActivity extends Activity {
     private boolean touchLongFired;
     private long lastTouchEventAt = -1L;
     private long lastTouchUpAt = -1L;
-    private boolean singleTapPending;
     private MediaRecorder recorder;
     private Uri pendingVideo;
     private ParcelFileDescriptor videoFile;
     private PowerManager.WakeLock recordingWakeLock;
     private PowerManager.WakeLock displayWakeLock;
 
-    private final Runnable hideStatus = () -> {
-        if (!settingsOpen && !recording && statusLabel != null) statusLabel.setVisibility(View.GONE);
+    private final Runnable hideStatus = new Runnable() {
+        @Override public void run() {
+            if (!recording && statusLabel != null) statusLabel.setVisibility(View.GONE);
+        }
     };
-    private final Runnable finishVideo = this::finishVideoNow;
-    private final Runnable wakeDisplay = this::wakeDisplayForRecording;
-    private final Runnable singleTap = () -> {
-        singleTapPending = false;
-        onSingleTap();
+    private final Runnable hideZoomFlash = new Runnable() {
+        @Override public void run() {
+            if (zoomFlash != null) zoomFlash.setVisibility(View.GONE);
+        }
     };
-    private final Runnable touchLongPress = () -> {
-        touchLongFired = true;
-        onTouchLongPress();
+    private final Runnable finishVideo = new Runnable() {
+        @Override public void run() { finishVideoNow(); }
+    };
+    private final Runnable wakeDisplay = new Runnable() {
+        @Override public void run() { wakeDisplayForRecording(); }
+    };
+    private final Runnable createPreview = new Runnable() {
+        @Override public void run() { createPreviewSession(); }
+    };
+    private final Runnable layoutPreview = new Runnable() {
+        @Override public void run() { configurePreviewLayout(); }
+    };
+    private final Runnable refreshOverlay = new Runnable() {
+        @Override public void run() { updateOverlay(); }
+    };
+    private final Runnable touchLongPress = new Runnable() {
+        @Override public void run() {
+            touchLongFired = true;
+            onTouchLongPress();
+        }
     };
     private final Runnable reconnect = new Runnable() {
         @Override public void run() {
@@ -159,6 +240,7 @@ public final class MainActivity extends Activity {
             if (!recording || !recorderStarted || recordingIndicator == null) return;
             long seconds = Math.max(0L, (SystemClock.elapsedRealtime() - videoStartedAt) / 1000L);
             recordingIndicator.setText(RecordingDisplay.label(seconds));
+            updatePhotoInfo();
             mainHandler.postDelayed(this, 1000L);
         }
     };
@@ -195,17 +277,10 @@ public final class MainActivity extends Activity {
             } else if (BUTTON_LONG.equals(action) || BUTTON_VERY_LONG.equals(action)) {
                 if (!longPressHandled) {
                     longPressHandled = true;
-                    if (settingsOpen) closeSettings();
-                    else if (!recording) startVideo();
+                    onTouchLongPress();
                 }
             } else if (BUTTON_UP.equals(action)) {
-                if (settingsOpen && !longPressHandled) {
-                    closeSettings();
-                } else if (recording && !longPressHandled) {
-                    stopVideo();
-                } else if (!longPressHandled && eventAt - buttonDownAt < 900L) {
-                    takePhoto();
-                }
+                if (!longPressHandled && eventAt - buttonDownAt < 900L) onTap();
             }
         }
     };
@@ -227,7 +302,7 @@ public final class MainActivity extends Activity {
         @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
             configurePreviewLayout();
             if (camera == null) openCamera();
-            else if (!recording && cameraHandler != null) cameraHandler.post(MainActivity.this::createPreviewSession);
+            else if (!recording && cameraHandler != null) cameraHandler.post(createPreview);
         }
         @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
             configurePreviewLayout();
@@ -240,6 +315,7 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        CrashLog.install(getApplicationContext());
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
@@ -254,23 +330,61 @@ public final class MainActivity extends Activity {
         displayWakeLock.setReferenceCounted(false);
         cameraManager = getSystemService(CameraManager.class);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        options.selectPhotoAspect(prefs.getInt("photo_aspect", 0));
+        // 2.6: formats now carry orientation (16:9 vs 9:16); old indexes meant other formats.
+        options.selectPhotoAspect(prefs.getInt("photo_aspect2", 0));
+        options.selectZoomStep(prefs.getInt("zoom_step", 0));
+        options.selectVideoAspect(prefs.getInt("video_aspect", 1));
+        options.frameOnly = prefs.getBoolean("frame_only", true);
+        options.selectFrameScale(prefs.getInt("frame_scale", CaptureOptions.FRAME_SCALE_DEFAULT_INDEX));
+        options.selectPhotoSize(prefs.getInt("photo_size", 0));
+        options.selectJpegQuality(prefs.getInt("jpeg_quality", CaptureOptions.JPEG_QUALITY_DEFAULT_INDEX));
         options.tapShutter = prefs.getBoolean("tap_shutter", true);
-        options.selectPreview(prefs.getInt("preview_size", 0),
-                prefs.getInt("preview_shift", CaptureOptions.PREVIEW_SHIFT_DEFAULT_INDEX));
+        options.swipeReversed = prefs.getBoolean("swipe_reversed", false);
+        // 2.6: default picture is smaller and lifted so its bottom edge stays readable.
+        options.selectPreview(prefs.getInt("preview_size2", CaptureOptions.PREVIEW_SIZE_DEFAULT_INDEX),
+                prefs.getInt("preview_shift2", CaptureOptions.PREVIEW_SHIFT_DEFAULT_INDEX));
         buildScreen();
+        if (!prefs.getBoolean(PREF_HELP_SEEN, false)) {
+            prefs.edit().putBoolean(PREF_HELP_SEEN, true).apply();
+            openHelp(false);
+        }
+    }
+
+    private TextView hudText(float sizeSp, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setTextColor(color);
+        view.setTextSize(sizeSp);
+        if (bold) view.setTypeface(null, Typeface.BOLD);
+        view.setShadowLayer(6f, 0f, 2f, Color.BLACK);
+        return view;
+    }
+
+    private static GradientDrawable box(int alpha, int radius) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.argb(alpha, 0, 0, 0));
+        drawable.setCornerRadius(radius);
+        return drawable;
     }
 
     private void buildScreen() {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-        root.setOnTouchListener((view, event) -> handleTouch(event));
-        // Everything visible lives in "stage", which can be shrunk and moved up/down
-        // so the picture sits where it is comfortable to look through the glasses.
+        root.setOnTouchListener(new View.OnTouchListener() {
+            @Override public boolean onTouch(View view, MotionEvent event) {
+                return handleTouch(event);
+            }
+        });
+        // The picture lives in "stage", which can be shrunk and moved up/down
+        // so it sits where it is comfortable to look through the glasses.
         stage = new FrameLayout(this);
         stage.setClipChildren(true);
         root.addView(stage, new FrameLayout.LayoutParams(-1, -1));
-        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> applyStagePlacement());
+        root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View v, int l, int t, int r, int b,
+                                                 int ol, int ot, int or, int ob) {
+                applyStagePlacement();
+            }
+        });
         preview = new TextureView(this);
         preview.setSurfaceTextureListener(surfaceListener);
         stage.addView(preview, new FrameLayout.LayoutParams(-1, -1));
@@ -278,58 +392,111 @@ public final class MainActivity extends Activity {
         overlay = new FrameOverlayView(this);
         stage.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
 
-        zoomLabel = new TextView(this);
-        zoomLabel.setTextColor(Color.rgb(140, 255, 140));
-        zoomLabel.setTextSize(36);
-        zoomLabel.setGravity(Gravity.CENTER);
-        zoomLabel.setShadowLayer(7f, 0f, 2f, Color.BLACK);
-        FrameLayout.LayoutParams zoomParams = new FrameLayout.LayoutParams(dp(150), dp(70), Gravity.TOP | Gravity.START);
+        // ---- HUD text: fixed to the top of the display, does not move with the picture.
+        zoomLabel = hudText(30, GREEN, true);
+        zoomLabel.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        FrameLayout.LayoutParams zoomParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         zoomParams.leftMargin = dp(10);
-        zoomParams.topMargin = dp(8);
-        stage.addView(zoomLabel, zoomParams);
+        zoomParams.topMargin = dp(2);
+        root.addView(zoomLabel, zoomParams);
 
-        batteryLabel = new TextView(this);
+        zoomBar = hudText(12, GREEN, false);
+        zoomBar.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        barParams.leftMargin = dp(12);
+        barParams.topMargin = dp(42);
+        root.addView(zoomBar, barParams);
+
+        // Current photo format and size, always visible (top right, under the battery).
+        photoInfo = hudText(11, GREEN, true);
+        FrameLayout.LayoutParams infoParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        infoParams.topMargin = dp(42);
+        infoParams.rightMargin = dp(12);
+        root.addView(photoInfo, infoParams);
+
+        batteryLabel = hudText(14, Color.WHITE, true);
         batteryLabel.setText(BatteryDisplay.label(-1, false));
-        batteryLabel.setTextColor(Color.WHITE);
-        batteryLabel.setTextSize(15);
         batteryLabel.setGravity(Gravity.CENTER);
-        batteryLabel.setTypeface(null, android.graphics.Typeface.BOLD);
-        batteryLabel.setShadowLayer(6f, 0f, 2f, Color.BLACK);
-        GradientDrawable batteryBackground = new GradientDrawable();
-        batteryBackground.setColor(Color.argb(165, 0, 0, 0));
-        batteryBackground.setCornerRadius(dp(12));
-        batteryLabel.setBackground(batteryBackground);
-        FrameLayout.LayoutParams batteryParams = new FrameLayout.LayoutParams(dp(150), dp(42), Gravity.TOP | Gravity.END);
-        batteryParams.topMargin = dp(10);
-        batteryParams.rightMargin = dp(14);
-        stage.addView(batteryLabel, batteryParams);
+        batteryLabel.setBackground(box(165, dp(12)));
+        batteryLabel.setPadding(dp(10), dp(4), dp(10), dp(4));
+        FrameLayout.LayoutParams batteryParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        batteryParams.topMargin = dp(8);
+        batteryParams.rightMargin = dp(12);
+        root.addView(batteryLabel, batteryParams);
 
-        recordingIndicator = new TextView(this);
+        recordingIndicator = hudText(16, Color.WHITE, true);
         recordingIndicator.setText(RecordingDisplay.label(0L));
-        recordingIndicator.setTextColor(Color.WHITE);
-        recordingIndicator.setTextSize(16);
         recordingIndicator.setGravity(Gravity.CENTER);
-        recordingIndicator.setTypeface(null, android.graphics.Typeface.BOLD);
         GradientDrawable recordingBackground = new GradientDrawable();
         recordingBackground.setColor(Color.argb(225, 180, 0, 0));
         recordingBackground.setCornerRadius(dp(14));
         recordingIndicator.setBackground(recordingBackground);
+        recordingIndicator.setPadding(dp(12), dp(6), dp(12), dp(6));
         recordingIndicator.setVisibility(View.GONE);
-        FrameLayout.LayoutParams recordingParams = new FrameLayout.LayoutParams(dp(170), dp(48), Gravity.TOP | Gravity.END);
-        recordingParams.topMargin = dp(60);
-        recordingParams.rightMargin = dp(14);
-        stage.addView(recordingIndicator, recordingParams);
+        FrameLayout.LayoutParams recordingParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        recordingParams.topMargin = dp(44);
+        recordingParams.rightMargin = dp(12);
+        root.addView(recordingIndicator, recordingParams);
 
-        statusLabel = new TextView(this);
-        statusLabel.setTextColor(Color.WHITE);
-        statusLabel.setTextSize(15);
+        // Permanent one-line cheat sheet.
+        hintLabel = hudText(12, Color.WHITE, false);
+        hintLabel.setGravity(Gravity.CENTER);
+        hintLabel.setBackground(box(120, dp(8)));
+        hintLabel.setPadding(dp(6), dp(2), dp(6), dp(2));
+        FrameLayout.LayoutParams hintParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        hintParams.topMargin = dp(96);
+        hintParams.leftMargin = dp(8);
+        hintParams.rightMargin = dp(8);
+        root.addView(hintLabel, hintParams);
+
+        // Transient status (saved, intercepted, …): right under the hint line.
+        statusLabel = hudText(15, Color.WHITE, true);
         statusLabel.setGravity(Gravity.CENTER);
-        statusLabel.setMinHeight(dp(60));
         statusLabel.setPadding(dp(10), dp(6), dp(10), dp(6));
-        statusLabel.setBackgroundColor(Color.argb(150, 0, 0, 0));
-        stage.addView(statusLabel, new FrameLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        statusLabel.setBackground(box(170, dp(10)));
+        FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        statusParams.topMargin = dp(128);
+        statusParams.leftMargin = dp(8);
+        statusParams.rightMargin = dp(8);
+        root.addView(statusLabel, statusParams);
+
+        // Big zoom value in the middle for a second after every change.
+        zoomFlash = hudText(54, GREEN, true);
+        zoomFlash.setGravity(Gravity.CENTER);
+        zoomFlash.setBackground(box(130, dp(16)));
+        zoomFlash.setPadding(dp(18), dp(4), dp(18), dp(4));
+        zoomFlash.setVisibility(View.GONE);
+        FrameLayout.LayoutParams flashParams = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.TOP);
+        flashParams.topMargin = dp(190);
+        root.addView(zoomFlash, flashParams);
+
+        // Settings menu: the whole list at once, selected line marked ▶.
+        menuPanel = hudText(12, Color.WHITE, false);
+        menuPanel.setTypeface(Typeface.MONOSPACE);
+        menuPanel.setBackground(box(215, dp(10)));
+        menuPanel.setPadding(dp(10), dp(8), dp(10), dp(8));
+        menuPanel.setVisibility(View.GONE);
+        FrameLayout.LayoutParams menuParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        menuParams.topMargin = dp(4);
+        menuParams.leftMargin = dp(6);
+        menuParams.rightMargin = dp(6);
+        root.addView(menuPanel, menuParams);
+
+        // Help / cheat sheet.
+        helpPanel = hudText(14, Color.WHITE, false);
+        helpPanel.setText(HELP_TEXT);
+        helpPanel.setBackground(box(235, dp(10)));
+        helpPanel.setPadding(dp(12), dp(10), dp(12), dp(10));
+        helpPanel.setVisibility(View.GONE);
+        FrameLayout.LayoutParams helpParams = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        helpParams.topMargin = dp(8);
+        helpParams.leftMargin = dp(6);
+        helpParams.rightMargin = dp(6);
+        root.addView(helpPanel, helpParams);
+
         updateZoomUi();
         updateOverlay();
+        updateHint();
         setStatus("Запуск…");
         setContentView(root);
     }
@@ -343,11 +510,12 @@ public final class MainActivity extends Activity {
         registerBatteryReceiver();
         registerAvailability();
         sendSafetyAction(ButtonSafetyService.ACTION_CLAIM);
+        claimMediaButtons();
         mainHandler.removeCallbacks(heartbeat);
         mainHandler.post(heartbeat);
         if (preview.isAvailable()) {
             if (camera == null) openCamera();
-            else if (!recording && cameraHandler != null) cameraHandler.post(this::createPreviewSession);
+            else if (!recording && cameraHandler != null) cameraHandler.post(createPreview);
         }
     }
 
@@ -364,6 +532,7 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(reconnect);
         cancelTouchCallbacks();
         if (settingsOpen) closeSettings();
+        closeActions();
         unregisterButtonReceiver();
         unregisterBatteryReceiver();
         unregisterAvailability();
@@ -372,6 +541,7 @@ public final class MainActivity extends Activity {
             else abortVideo();
         }
         closeCamera();
+        releaseMediaButtons();
         sendSafetyAction(ButtonSafetyService.ACTION_RELEASE);
         stopCameraThread();
         super.onPause();
@@ -383,11 +553,28 @@ public final class MainActivity extends Activity {
         super.onUserLeaveHint();
     }
 
+    /**
+     * On RV101 the temple sends Back (no touch events reach apps), so Back is
+     * the menu key: main screen → menu; menu → leave the app; settings/help → main.
+     */
     @Override public void onBackPressed() {
+        if (helpOpen) {
+            closeHelp();
+            return;
+        }
         if (settingsOpen) {
             closeSettings();
             return;
         }
+        if (recording) {
+            stopVideo();
+            return;
+        }
+        if (!actionsOpen) {
+            openActions();
+            return;
+        }
+        closeActions();
         userLeaving = true;
         videoStartPending = false;
         super.onBackPressed();
@@ -401,6 +588,9 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(updateRecordingClock);
         mainHandler.removeCallbacks(reconnect);
         mainHandler.removeCallbacks(hideStatus);
+        mainHandler.removeCallbacks(hideZoomFlash);
+        mainHandler.removeCallbacks(ringRightButton);
+        releaseMediaButtons();
         cancelTouchCallbacks();
         if (recording) {
             if (recorderStarted) finishVideoNow();
@@ -513,18 +703,20 @@ public final class MainActivity extends Activity {
             maximumZoom = max == null ? 1f : max;
             Integer orientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
             sensorOrientation = orientation == null ? 0 : orientation;
+            options.cameraTurned = sensorOrientation == 90 || sensorOrientation == 270;
             android.hardware.camera2.params.StreamConfigurationMap map =
                     characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             if (map == null) throw new CameraAccessException(CameraAccessException.CAMERA_ERROR);
             previewSize = choosePreviewSize(map.getOutputSizes(SurfaceTexture.class));
             loadVideoOptions(map.getOutputSizes(MediaRecorder.class),
                     characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES));
-            Size photoSize = Collections.max(Arrays.asList(map.getOutputSizes(android.graphics.ImageFormat.JPEG)),
-                    Comparator.comparingLong(size -> (long) size.getWidth() * size.getHeight()));
+            photoSize = Collections.max(Arrays.asList(map.getOutputSizes(android.graphics.ImageFormat.JPEG)), BY_AREA);
             if (imageReader != null) imageReader.close();
             imageReader = ImageReader.newInstance(photoSize.getWidth(), photoSize.getHeight(),
                     android.graphics.ImageFormat.JPEG, 2);
-            imageReader.setOnImageAvailableListener(this::savePhoto, cameraHandler);
+            imageReader.setOnImageAvailableListener(new ImageReader.OnImageAvailableListener() {
+                @Override public void onImageAvailable(ImageReader reader) { savePhoto(reader); }
+            }, cameraHandler);
             Log.i(TAG, "Camera " + cameraId + " preview=" + previewSize + " photo=" + photoSize +
                     " maxZoom=" + maximumZoom + " sensorOrientation=" + sensorOrientation +
                     " eis=" + videoStabilizationSupported + " fps=" + fixedFpsRanges);
@@ -565,17 +757,31 @@ public final class MainActivity extends Activity {
         options.selectDefaultVideoSize();
         if (savedWidth > 0) options.selectVideoSize(savedWidth, savedHeight);
         options.selectFps(prefs.getInt("fps", 30));
-        runOnUiThread(this::updateOverlay);
+        runOnUiThread(refreshOverlay);
+        final String crash = CrashLog.collect(this);
+        if (crash != null) {
+            Log.w(TAG, crash);
+            mainHandler.postDelayed(new Runnable() {
+                @Override public void run() { setStatus(crash); }
+            }, 1500L);
+        }
     }
 
     private void savePrefs() {
         int[] size = options.videoSize();
         SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putInt("photo_aspect", options.photoAspectIndex)
+                .putInt("photo_aspect2", options.photoAspectIndex)
+                .putInt("zoom_step", options.zoomStepIndex)
+                .putInt("video_aspect", options.videoAspectIndex)
+                .putBoolean("frame_only", options.frameOnly)
+                .putInt("frame_scale", options.frameScaleIndex)
+                .putInt("photo_size", options.photoSizeIndex)
+                .putInt("jpeg_quality", options.jpegQualityIndex)
                 .putInt("fps", options.fps())
                 .putBoolean("tap_shutter", options.tapShutter)
-                .putInt("preview_size", options.previewSizeIndex)
-                .putInt("preview_shift", options.previewShiftIndex);
+                .putBoolean("swipe_reversed", options.swipeReversed)
+                .putInt("preview_size2", options.previewSizeIndex)
+                .putInt("preview_shift2", options.previewShiftIndex);
         if (size != null) editor.putInt("video_w", size[0]).putInt("video_h", size[1]);
         editor.apply();
     }
@@ -613,16 +819,18 @@ public final class MainActivity extends Activity {
         if (camera == device) camera = null;
         session = null;
         takingPhoto = false;
-        runOnUiThread(() -> {
-            if (recording) {
-                if (recorderStarted) finishVideoNow();
-                else abortVideo();
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (recording) {
+                    if (recorderStarted) finishVideoNow();
+                    else abortVideo();
+                }
+                boolean afterButton = lastPhysicalButtonAt > 0L &&
+                        SystemClock.elapsedRealtime() - lastPhysicalButtonAt < BUTTON_CONFLICT_WINDOW_MS;
+                scheduleReconnect(afterButton
+                        ? "Кнопку забрала системная камера\n(там без зума). Здесь снимайте\nТАПОМ по дужке"
+                        : "Камеру занял другой процесс.\nПереподключаюсь…");
             }
-            boolean afterButton = lastPhysicalButtonAt > 0L &&
-                    SystemClock.elapsedRealtime() - lastPhysicalButtonAt < BUTTON_CONFLICT_WINDOW_MS;
-            scheduleReconnect(afterButton
-                    ? "Кнопку перехватила системная камера.\nСнимайте тапом по дужке (см. инструкцию)"
-                    : "Камеру занял другой процесс.\nПереподключаюсь…");
         });
     }
 
@@ -641,7 +849,7 @@ public final class MainActivity extends Activity {
             if (session != null) session.close();
             session = null;
             texture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-            runOnUiThread(this::configurePreviewLayout);
+            runOnUiThread(layoutPreview);
             Surface surface = new Surface(texture);
             repeatingBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             repeatingBuilder.addTarget(surface);
@@ -652,8 +860,12 @@ public final class MainActivity extends Activity {
                     session = value;
                     try {
                         value.setRepeatingRequest(repeatingBuilder.build(), null, cameraHandler);
-                        if (!settingsOpen) setStatus(idleHint());
-                        if (videoStartPending) runOnUiThread(MainActivity.this::startVideo);
+                        if (!settingsOpen) setStatus("Готово");
+                        if (videoStartPending) {
+                            runOnUiThread(new Runnable() {
+                                @Override public void run() { startVideo(); }
+                            });
+                        }
                     } catch (CameraAccessException | IllegalStateException error) {
                         setStatus("Не удалось запустить превью");
                     }
@@ -669,7 +881,7 @@ public final class MainActivity extends Activity {
     }
 
     private float effectiveZoom() {
-        return ZoomMath.clamp(ZOOM_STEPS[zoomIndex], maximumZoom);
+        return ZoomMath.clamp(zoom, maximumZoom);
     }
 
     private Rect fullCrop() {
@@ -682,7 +894,7 @@ public final class MainActivity extends Activity {
         Rect full = fullCrop();
         if (full != null) {
             builder.set(CaptureRequest.SCALER_CROP_REGION,
-                    applyZoom ? ZoomMath.crop(full, ZOOM_STEPS[zoomIndex], maximumZoom) : full);
+                    applyZoom ? ZoomMath.crop(full, zoom, maximumZoom) : full);
         }
     }
 
@@ -700,34 +912,96 @@ public final class MainActivity extends Activity {
     }
 
     private void changeZoom(int direction) {
-        if (recording) return;
-        int next = Math.max(0, Math.min(ZOOM_STEPS.length - 1, zoomIndex + direction));
-        if (next == zoomIndex) return;
-        zoomIndex = next;
+        if (recording && !recorderStarted) return;
+        float top = ZoomMath.clamp(ZOOM_MAX, maximumZoom);
+        float next = ZoomMath.step(zoom, direction, options.zoomStep(), top);
+        if (Math.abs(next - zoom) < 0.001f) {
+            flashZoom(direction > 0 ? String.format(Locale.US, "макс. %.1f×", top) : "мин. 1×");
+            return;
+        }
+        zoom = next;
         updateZoomUi();
+        flashZoom(String.format(Locale.US, "%.1f×", zoom));
         CaptureRequest.Builder builder = repeatingBuilder;
         CameraCaptureSession current = session;
         if (builder != null && current != null && cameraHandler != null) {
             try {
-                setCommonControls(builder, true);
+                // During recording the same crop goes to the recorder surface, so
+                // the zoom lands in the video file (digital, from the HAL crop).
+                if (recording) setVideoControls(builder, recordingFps);
+                else setCommonControls(builder, true);
                 current.setRepeatingRequest(builder.build(), null, cameraHandler);
             } catch (CameraAccessException | IllegalStateException ignored) {}
         }
     }
 
+    private void flashZoom(String text) {
+        if (zoomFlash == null) return;
+        zoomFlash.setText(text);
+        zoomFlash.setVisibility(View.VISIBLE);
+        mainHandler.removeCallbacks(hideZoomFlash);
+        mainHandler.postDelayed(hideZoomFlash, 1100L);
+    }
+
     private void updateZoomUi() {
-        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "%.1f×", ZOOM_STEPS[zoomIndex]));
+        if (zoomLabel != null) zoomLabel.setText(String.format(Locale.US, "ЗУМ %.1f×", zoom));
+        if (zoomBar != null) zoomBar.setText(ZoomMath.bar(zoom, ZOOM_MAX));
+        updateOverlay();
+    }
+
+    private void updatePhotoInfo() {
+        if (photoInfo == null) return;
+        StringBuilder sb = new StringBuilder();
+        int[] video = options.videoSize();
+        int[] expectedVideo = expectedVideoSize();
+        String videoLabel = expectedVideo == null ? "—" : videoTitle(expectedVideo, options.fps());
+        if (recording) {
+            long bytes = -1L;
+            try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
+            int[] rec = recordingSize;
+            sb.append("REC ").append(rec == null ? videoLabel : videoTitle(rec, recordingFps));
+            if (bytes > 0) sb.append(" · ").append(MediaLabels.fileSize(bytes));
+        } else {
+            int[] dims = expectedPhotoDims();
+            sb.append("ФОТО ").append(aspectLabel(options.photoAspect())).append(" · ")
+                    .append(MediaLabels.megapixels(dims[0], dims[1]))
+                    .append("\nВИДЕО ").append(videoLabel);
+            if (lastFileInfo != null) sb.append("\nпосл.: ").append(lastFileInfo);
+        }
+        photoInfo.setText(sb.toString());
+        photoInfo.setGravity(Gravity.END);
+        photoInfo.setVisibility(View.VISIBLE);
     }
 
     private void updateOverlay() {
-        if (overlay != null) overlay.setFrames(options.photoAspect(), options.videoAspect(), recording);
+        updatePhotoInfo();
+        // While a video setting is selected, the viewfinder shows the video frame instead of the photo one.
+        boolean videoItem = settingsOpen && (settingsItem == CaptureOptions.ITEM_VIDEO_ASPECT
+                || settingsItem == CaptureOptions.ITEM_VIDEO_SIZE || settingsItem == CaptureOptions.ITEM_FPS);
+        if (overlay != null) {
+            overlay.setFrames(options.photoAspect(), options.videoViewAspect(), recording || videoItem);
+            // Frame only: the camera picture is hidden (still running for capture) and the
+            // outline shrinks with zoom, like the area that really goes into the file.
+            overlay.setFrameOnly(options.frameOnly, options.frameScale() / Math.max(1f, effectiveZoom()));
+        }
+        if (preview != null) preview.setAlpha(options.frameOnly ? 0f : 1f);
     }
 
-    private String idleHint() {
-        if (options.tapShutter) {
-            return "Фото: тап · Видео: удержание (или кнопка)\nЗум: свайп · Настройки: двойной тап";
+    /** The always-visible one-line cheat sheet. */
+    private void updateHint() {
+        if (hintLabel == null) return;
+        if (settingsOpen || helpOpen || actionsOpen) {
+            hintLabel.setVisibility(View.GONE);
+            return;
         }
-        return "Фото: кнопка · Видео: долгое нажатие\nЗум: свайп · Настройки: двойной тап";
+        hintLabel.setVisibility(View.VISIBLE);
+        if (recording) {
+            hintLabel.setText("ЗАПИСЬ · стоп: нажать колесо\nкрутить колесо: зум");
+        } else if (options.tapShutter) {
+            hintLabel.setText("фото: нажать колесо · зум: крутить\nменю: правая кнопка");
+        } else {
+            hintLabel.setText("фото: нажать колесо · зум: крутить\nменю: правая кнопка · тап выкл");
+        }
     }
 
     // ---------------------------------------------------------------- photo
@@ -741,6 +1015,8 @@ public final class MainActivity extends Activity {
         takingPhoto = true;
         photoZoom = effectiveZoom();
         photoAspect = options.photoAspect();
+        photoMaxSide = options.photoMaxLongSide();
+        photoQuality = options.jpegQuality();
         setStatus("Снимаю…");
         try {
             CaptureRequest.Builder still = device.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
@@ -749,12 +1025,16 @@ public final class MainActivity extends Activity {
             // file always matches the preview, whatever the HAL does with JPEG crops.
             setCommonControls(still, false);
             still.set(CaptureRequest.JPEG_ORIENTATION, jpegOrientation());
-            still.set(CaptureRequest.JPEG_QUALITY, (byte) 95);
+            still.set(CaptureRequest.JPEG_QUALITY, (byte) photoQuality);
             current.capture(still.build(), new CameraCaptureSession.CaptureCallback() {
                 @Override public void onCaptureCompleted(CameraCaptureSession s, CaptureRequest r, TotalCaptureResult result) {
                     Handler handler = cameraHandler;
-                    ImageReader reader = imageReader;
-                    if (handler != null) handler.postDelayed(() -> savePhoto(reader), 250L);
+                    final ImageReader reader = imageReader;
+                    if (handler != null) {
+                        handler.postDelayed(new Runnable() {
+                            @Override public void run() { savePhoto(reader); }
+                        }, 250L);
+                    }
                 }
                 @Override public void onCaptureFailed(CameraCaptureSession s, CaptureRequest r, CaptureFailure failure) {
                     takingPhoto = false;
@@ -770,7 +1050,7 @@ public final class MainActivity extends Activity {
 
     private void savePhoto(ImageReader reader) {
         if (reader == null) return;
-        byte[] jpeg;
+        final byte[] jpeg;
         try (Image image = reader.acquireNextImage()) {
             if (image == null) return;
             ByteBuffer buffer = image.getPlanes()[0].getBuffer();
@@ -783,14 +1063,18 @@ public final class MainActivity extends Activity {
         }
         final float zoom = photoZoom;
         final float aspect = photoAspect;
+        final int maxSide = photoMaxSide;
+        final int quality = photoQuality;
         setStatus("Сохраняю…");
-        new Thread(() -> writePhoto(jpeg, zoom, aspect), "RokidZoomRuPhoto").start();
+        new Thread(new Runnable() {
+            @Override public void run() { writePhoto(jpeg, zoom, aspect, maxSide, quality); }
+        }, "RokidZoomRuPhoto").start();
     }
 
-    private void writePhoto(byte[] jpeg, float zoom, float aspect) {
+    private void writePhoto(byte[] jpeg, float zoom, float aspect, int maxSide, int quality) {
         String message;
         try {
-            PhotoProcessor.Result result = PhotoProcessor.process(jpeg, zoom, aspect, getCacheDir());
+            PhotoProcessor.Result result = PhotoProcessor.process(jpeg, zoom, aspect, maxSide, quality, getCacheDir());
             String name = PHOTO_FILE_PREFIX + timestamp() + "_" +
                     String.format(Locale.US, "%.1fx_%s.jpg", zoom, aspectTag(aspect));
             ContentValues values = new ContentValues();
@@ -807,49 +1091,76 @@ public final class MainActivity extends Activity {
             ContentValues ready = new ContentValues();
             ready.put(MediaStore.Images.Media.IS_PENDING, 0);
             getContentResolver().update(uri, ready, null, null);
-            boolean wanted = zoom > 1.01f || Math.abs(aspect - 4f / 3f) > 0.02f;
+            boolean wanted = zoom > 1.01f || aspect > 0f;
             if (wanted && !result.cropped) {
                 message = "Сохранено БЕЗ зума — не хватило памяти";
             } else {
-                message = String.format(Locale.US, "Сохранено %.1f× · %s · %d×%d",
-                        zoom, aspectLabel(aspect), result.width, result.height);
+                lastFileInfo = String.format(Locale.US, "%s %s · %s",
+                        aspectLabel(aspect), MediaLabels.megapixels(result.width, result.height),
+                        MediaLabels.fileSize(result.jpeg.length));
+                message = String.format(Locale.US, "✓ Фото %.1f× · %s · %s\n%d×%d · JPEG %d%%",
+                        zoom, MediaLabels.megapixels(result.width, result.height),
+                        MediaLabels.fileSize(result.jpeg.length), result.width, result.height, quality);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() { updatePhotoInfo(); }
+                });
             }
-        } catch (Exception error) {
+        } catch (Throwable error) {
             Log.e(TAG, "Could not save photo", error);
             message = "Не удалось сохранить фото";
         } finally {
             takingPhoto = false;
         }
         setStatus(message);
-        mainHandler.postDelayed(() -> {
-            if (!recording && !settingsOpen && resumed && !takingPhoto) setStatus(idleHint());
-        }, 2200L);
     }
 
     private static String aspectTag(float aspect) {
-        return aspectLabel(aspect).replace(':', 'x');
+        return aspect <= 0f ? "full" : aspectLabel(aspect).replace(':', 'x');
     }
 
     private static String aspectLabel(float aspect) {
-        if (Math.abs(aspect - 16f / 9f) < 0.02f) return "16:9";
-        if (Math.abs(aspect - 3f / 2f) < 0.02f) return "3:2";
-        if (Math.abs(aspect - 1f) < 0.02f) return "1:1";
-        return "4:3";
+        if (aspect <= 0f) return "весь кадр";
+        float[] values = {16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
+        String[] names = {"16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "1:1"};
+        for (int i = 0; i < values.length; i++) {
+            if (Math.abs(aspect - values[i]) < 0.02f) return names[i];
+        }
+        return String.format(Locale.US, "%.2f", aspect);
+    }
+
+    /** Size of the next photo with the current zoom/format/size settings. */
+    private String expectedPhotoSize() {
+        int[] out = expectedPhotoDims();
+        return out[0] + "×" + out[1];
+    }
+
+    private int[] expectedPhotoDims() {
+        // Size of the photo as viewed (upright): the sensor frame turned by the JPEG orientation.
+        int sw = photoSize == null ? 4032 : photoSize.getWidth();
+        int sh = photoSize == null ? 3024 : photoSize.getHeight();
+        int turn = getDisplay() == null ? sensorOrientation : jpegOrientation();
+        boolean turned = turn == 90 || turn == 270;
+        int w = turned ? sh : sw;
+        int h = turned ? sw : sh;
+        int[] crop = PhotoCrop.crop(w, h, effectiveZoom(), options.photoAspect(), false);
+        int cw = crop == null ? w : crop[2] - crop[0];
+        int ch = crop == null ? h : crop[3] - crop[1];
+        return PhotoCrop.limitSize(cw, ch, options.photoMaxLongSide());
     }
 
     // ---------------------------------------------------------------- video
 
     private void startVideo() {
-        if (settingsOpen) return;
+        if (settingsOpen || helpOpen || actionsOpen) return;
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             videoStartPending = true;
             setStatus("Для видео нужен доступ к микрофону");
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION);
             return;
         }
-        CameraDevice device = camera;
+        final CameraDevice device = camera;
         SurfaceTexture texture = preview.getSurfaceTexture();
-        int[] size = options.videoSize();
+        final int[] size = options.videoSize();
         if (recording) return;
         if (device == null || session == null || texture == null || size == null) {
             videoStartPending = true;
@@ -857,6 +1168,20 @@ public final class MainActivity extends Activity {
             return;
         }
         final int fps = options.fps();
+        final int rotation = jpegOrientation();
+        float format = options.videoFormat();
+        boolean nativeShape = format <= 0f || Math.abs(format - options.nativeVideoAspect()) < 0.02f;
+        final boolean viaGl = !nativeShape && !forceNativeVideoOnce;
+        forceNativeVideoOnce = false;
+        // Native: the camera size as is, turned by the orientation hint.
+        // Other shapes: a camera stream is drawn upright + cropped into an encoder of this size.
+        final int[] source = viaGl ? VideoGeometry.chooseSource(options.allVideoSizes(), rotation, format,
+                Math.max(size[0], size[1])) : size;
+        final int[] encoded = viaGl ? VideoGeometry.outputSize(source[0], source[1], rotation, format,
+                Math.max(size[0], size[1])) : size;
+        recordingViaGl = viaGl;
+        recordingFps = fps;
+        recordingSize = viaGl ? encoded : VideoGeometry.upright(size[0], size[1], rotation);
         videoStartPending = false;
         recording = true;
         recorderStarted = false;
@@ -865,10 +1190,13 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(finishVideo);
         acquireRecordingWakeLock();
         updateOverlay();
+        updateHint();
         try {
             ContentValues values = new ContentValues();
             values.put(MediaStore.Video.Media.DISPLAY_NAME, PHOTO_FILE_PREFIX + timestamp() + "_" +
-                    String.format(Locale.US, "%.1fx_%dp%d.mp4", effectiveZoom(), size[1], fps));
+                    String.format(Locale.US, "%.1fx_%s_%dp%d.mp4", effectiveZoom(),
+                            CaptureOptions.aspectName(viaGl ? options.videoFormat() : options.nativeVideoAspect()).replace(':', 'x'),
+                            Math.min(encoded[0], encoded[1]), fps));
             values.put(MediaStore.Video.Media.MIME_TYPE, "video/mp4");
             values.put(MediaStore.Video.Media.RELATIVE_PATH, MediaPaths.VIDEO_PATH);
             values.put(MediaStore.Video.Media.IS_PENDING, 1);
@@ -876,7 +1204,7 @@ public final class MainActivity extends Activity {
             if (pendingVideo == null) throw new IllegalStateException("MediaStore insert failed");
             videoFile = getContentResolver().openFileDescriptor(pendingVideo, "w");
             if (videoFile == null) throw new IllegalStateException("MediaStore file failed");
-            long bitrate = Math.max(4_000_000L, Math.min(40_000_000L, (long) (size[0] * (long) size[1] * fps * 0.17)));
+            long bitrate = Math.max(4_000_000L, Math.min(40_000_000L, (long) (encoded[0] * (long) encoded[1] * fps * 0.17)));
             recorder = new MediaRecorder();
             recorder.setAudioSource(MediaRecorder.AudioSource.CAMCORDER);
             recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
@@ -888,39 +1216,49 @@ public final class MainActivity extends Activity {
             recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
             recorder.setVideoEncodingBitRate((int) bitrate);
             recorder.setVideoFrameRate(fps);
-            recorder.setVideoSize(size[0], size[1]);
+            recorder.setVideoSize(encoded[0], encoded[1]);
             recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
-            recorder.setOrientationHint(jpegOrientation());
+            recorder.setOrientationHint(viaGl ? 0 : rotation);
             recorder.prepare();
 
             session.close();
             session = null;
             texture.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
-            runOnUiThread(this::configurePreviewLayout);
+            runOnUiThread(layoutPreview);
             Surface previewSurface = new Surface(texture);
             Surface recordSurface = recorder.getSurface();
+            if (viaGl) {
+                int[] up = VideoGeometry.upright(source[0], source[1], rotation);
+                videoRenderer = new VideoGlRenderer(recordSurface, encoded[0], encoded[1], source[0], source[1],
+                        rotation, options.videoFormat(), up[0], up[1]);
+                recordSurface = videoRenderer.start();
+                Log.i(TAG, "Video via GL: source " + source[0] + "x" + source[1] + " rot " + rotation +
+                        " -> " + encoded[0] + "x" + encoded[1]);
+            }
+            final Surface cameraRecordSurface = recordSurface;
             repeatingBuilder = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
             repeatingBuilder.addTarget(previewSurface);
-            repeatingBuilder.addTarget(recordSurface);
+            repeatingBuilder.addTarget(cameraRecordSurface);
             setVideoControls(repeatingBuilder, fps);
-            device.createCaptureSession(Arrays.asList(previewSurface, recordSurface), new CameraCaptureSession.StateCallback() {
+            device.createCaptureSession(Arrays.asList(previewSurface, cameraRecordSurface), new CameraCaptureSession.StateCallback() {
                 @Override public void onConfigured(CameraCaptureSession value) {
                     if (!recording || camera == null) { value.close(); return; }
                     session = value;
                     try {
                         value.setRepeatingRequest(repeatingBuilder.build(), null, cameraHandler);
                         recorder.start();
-                        runOnUiThread(() -> {
-                            if (!recording) return;
-                            recorderStarted = true;
-                            videoStartedAt = SystemClock.elapsedRealtime();
-                            recordingIndicator.setText(RecordingDisplay.label(0L));
-                            recordingIndicator.setVisibility(View.VISIBLE);
-                            mainHandler.removeCallbacks(updateRecordingClock);
-                            mainHandler.post(updateRecordingClock);
-                            setStatus(String.format(Locale.US, "%d×%d · %d к/с\nСтоп: тап или кнопка",
-                                    size[0], size[1], fps));
-                            if (stopVideoRequested) stopVideo();
+                        runOnUiThread(new Runnable() {
+                            @Override public void run() {
+                                if (!recording) return;
+                                recorderStarted = true;
+                                videoStartedAt = SystemClock.elapsedRealtime();
+                                recordingIndicator.setText(RecordingDisplay.label(0L));
+                                recordingIndicator.setVisibility(View.VISIBLE);
+                                mainHandler.removeCallbacks(updateRecordingClock);
+                                mainHandler.post(updateRecordingClock);
+                                setStatus("Запись " + videoTitle(recordingSize, fps));
+                                if (stopVideoRequested) stopVideo();
+                            }
                         });
                     } catch (Exception error) {
                         Log.e(TAG, "Could not start recording session", error);
@@ -928,7 +1266,8 @@ public final class MainActivity extends Activity {
                     }
                 }
                 @Override public void onConfigureFailed(CameraCaptureSession value) {
-                    Log.e(TAG, "Recording session configuration failed for " + size[0] + "x" + size[1] + "@" + fps);
+                    Log.e(TAG, "Recording session configuration failed for " + encoded[0] + "x" + encoded[1] + "@" + fps
+                            + (viaGl ? " via GL from " + source[0] + "x" + source[1] : ""));
                     failVideo();
                 }
             }, cameraHandler);
@@ -964,7 +1303,9 @@ public final class MainActivity extends Activity {
         recorderStarted = false;
         stopVideoRequested = false;
         boolean saved = false;
+        long seconds = Math.max(0L, (SystemClock.elapsedRealtime() - videoStartedAt) / 1000L);
         try {
+            if (videoRenderer != null) videoRenderer.stopDrawing();
             if (recorder != null) {
                 recorder.stop();
                 saved = true;
@@ -972,38 +1313,75 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException error) {
             Log.w(TAG, "Video was too short or could not stop", error);
         }
+        long bytes = -1L;
+        try { if (videoFile != null) bytes = videoFile.getStatSize(); } catch (RuntimeException ignored) {}
+        if (saved && recordingSize != null) {
+            lastFileInfo = videoTitle(recordingSize, recordingFps)
+                    + " · " + MediaLabels.fileSize(bytes) + " · " + RecordingDisplay.label(seconds).replace("● ЗАПИСЬ ", "");
+        }
         releaseRecorder(saved);
         releaseRecordingWakeLock();
         releaseDisplayWakeLock();
         mainHandler.removeCallbacks(updateRecordingClock);
         recordingIndicator.setVisibility(View.GONE);
         updateOverlay();
-        setStatus(saved ? "Видео сохранено" : "Не удалось сохранить видео");
+        updateHint();
+        setStatus(saved ? "✓ Видео " + lastFileInfo : "Не удалось сохранить видео");
         returnToPreviewLater();
     }
 
     private void failVideo() {
-        runOnUiThread(() -> {
-            mainHandler.removeCallbacks(finishVideo);
-            recording = false;
-            recorderStarted = false;
-            stopVideoRequested = false;
-            stopVideoScheduled = false;
-            videoStartPending = false;
-            releaseRecorder(false);
-            releaseRecordingWakeLock();
-            releaseDisplayWakeLock();
-            mainHandler.removeCallbacks(updateRecordingClock);
-            recordingIndicator.setVisibility(View.GONE);
-            updateOverlay();
-            setStatus("Видео не запустилось.\nПопробуйте другое разрешение или к/с");
-            returnToPreviewLater();
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                mainHandler.removeCallbacks(finishVideo);
+                recording = false;
+                recorderStarted = false;
+                stopVideoRequested = false;
+                stopVideoScheduled = false;
+                videoStartPending = false;
+                releaseRecorder(false);
+                releaseRecordingWakeLock();
+                releaseDisplayWakeLock();
+                mainHandler.removeCallbacks(updateRecordingClock);
+                recordingIndicator.setVisibility(View.GONE);
+                updateOverlay();
+                updateHint();
+                if (recordingViaGl) {
+                    recordingViaGl = false;
+                    forceNativeVideoOnce = true;
+                    videoStartPending = true;
+                    setStatus("Формат " + CaptureOptions.aspectName(options.videoFormat()) +
+                            " не запустился.\nПишу в родном формате " + CaptureOptions.aspectName(options.nativeVideoAspect()));
+                } else {
+                    setStatus("Видео не запустилось.\nПопробуйте другое разрешение или к/с");
+                }
+                returnToPreviewLater();
+            }
         });
+    }
+
+    /** Size {width, height} as viewed of the next video with the current settings. */
+    private int[] expectedVideoSize() {
+        int[] size = options.videoSize();
+        if (size == null) return null;
+        int rotation = getDisplay() == null ? sensorOrientation : jpegOrientation();
+        float format = options.videoFormat();
+        if (format <= 0f || Math.abs(format - options.nativeVideoAspect()) < 0.02f) {
+            return VideoGeometry.upright(size[0], size[1], rotation);
+        }
+        int maxLong = Math.max(size[0], size[1]);
+        int[] source = VideoGeometry.chooseSource(options.allVideoSizes(), rotation, format, maxLong);
+        return VideoGeometry.outputSize(source[0], source[1], rotation, format, maxLong);
+    }
+
+    /** "16:9 1080p30" style title of the recorded video. */
+    private static String videoTitle(int[] size, int fps) {
+        return CaptureOptions.aspectName((float) size[0] / size[1]) + " " + MediaLabels.video(size[0], size[1], fps);
     }
 
     private void returnToPreviewLater() {
         Handler handler = cameraHandler;
-        if (resumed && camera != null && handler != null) handler.postDelayed(this::createPreviewSession, 250L);
+        if (resumed && camera != null && handler != null) handler.postDelayed(createPreview, 250L);
         else if (resumed && camera == null) scheduleReconnect("Переподключаю камеру…");
     }
 
@@ -1020,6 +1398,7 @@ public final class MainActivity extends Activity {
         mainHandler.removeCallbacks(updateRecordingClock);
         recordingIndicator.setVisibility(View.GONE);
         updateOverlay();
+        updateHint();
     }
 
     private void acquireRecordingWakeLock() {
@@ -1044,6 +1423,10 @@ public final class MainActivity extends Activity {
     }
 
     private void releaseRecorder(boolean keepFile) {
+        if (videoRenderer != null) {
+            videoRenderer.release();
+            videoRenderer = null;
+        }
         if (recorder != null) {
             try { recorder.reset(); } catch (RuntimeException ignored) {}
             recorder.release();
@@ -1077,12 +1460,13 @@ public final class MainActivity extends Activity {
         repeatingBuilder = null;
     }
 
-    // ---------------------------------------------------------------- settings menu
+    // ---------------------------------------------------------------- settings menu + help
 
     private void openSettings() {
         if (recording || settingsOpen) return;
         settingsOpen = true;
         settingsItem = 0;
+        statusLabel.setVisibility(View.GONE);
         showSettings();
     }
 
@@ -1090,26 +1474,87 @@ public final class MainActivity extends Activity {
         if (!settingsOpen) return;
         settingsOpen = false;
         savePrefs();
+        menuPanel.setVisibility(View.GONE);
         updateOverlay();
-        setStatus("Настройки сохранены");
-        mainHandler.postDelayed(() -> {
-            if (!settingsOpen && !recording && resumed && !takingPhoto) setStatus(idleHint());
-        }, 1500L);
+        updateHint();
+        updatePhotoInfo();
+        setStatus("Настройки сохранены: фото " + aspectLabel(options.photoAspect()) + " · " + expectedPhotoSize());
     }
 
     private void showSettings() {
         updateOverlay();
-        setStatus(String.format(Locale.US, "⚙ %s (%d/%d)\n◀  %s  ▶\nсвайп: менять · тап: далее · 2× тап: выход",
-                options.itemName(settingsItem), settingsItem + 1, CaptureOptions.ITEM_COUNT,
-                options.valueLabel(settingsItem)));
+        updateHint();
+        StringBuilder sb = new StringBuilder("НАСТРОЙКИ\n");
+        for (int i = 0; i < CaptureOptions.ITEM_COUNT; i++) {
+            boolean selected = i == settingsItem;
+            sb.append(selected ? "▶ " : "  ").append(options.itemName(i));
+            if (!CaptureOptions.isAction(i)) {
+                sb.append(": ").append(selected ? "◀ " : "").append(options.valueLabel(i))
+                        .append(selected ? " ▶" : "");
+            }
+            sb.append('\n');
+        }
+        sb.append("Фото получится: ").append(expectedPhotoSize()).append('\n');
+        int[] video = expectedVideoSize();
+        if (video != null) {
+            sb.append("Видео получится: ").append(video[0]).append('×').append(video[1])
+                    .append(" (").append(CaptureOptions.aspectName((float) video[0] / video[1])).append(")\n");
+        }
+        if (CaptureOptions.isAction(settingsItem)) {
+            sb.append("нажать колесо: ").append(settingsItem == CaptureOptions.ITEM_HELP ? "открыть" : "выйти")
+                    .append(" · крутить: дальше");
+        } else {
+            sb.append("крутить колесо: изменить\nнажать колесо: след. пункт · правая кнопка: выход");
+        }
+        menuPanel.setText(sb.toString());
+        menuPanel.setVisibility(View.VISIBLE);
     }
 
     private void changeSetting(int direction) {
+        if (CaptureOptions.isAction(settingsItem)) {
+            settingsItem = (settingsItem + (direction >= 0 ? 1 : CaptureOptions.ITEM_COUNT - 1))
+                    % CaptureOptions.ITEM_COUNT;
+            showSettings();
+            return;
+        }
         options.change(settingsItem, direction);
         if (settingsItem == CaptureOptions.ITEM_PREVIEW_SIZE || settingsItem == CaptureOptions.ITEM_PREVIEW_SHIFT) {
             applyStagePlacement();
         }
         showSettings();
+    }
+
+    private void onSettingsTap() {
+        if (settingsItem == CaptureOptions.ITEM_CLOSE) {
+            closeSettings();
+        } else if (settingsItem == CaptureOptions.ITEM_HELP) {
+            openHelp(true);
+        } else {
+            settingsItem = (settingsItem + 1) % CaptureOptions.ITEM_COUNT;
+            showSettings();
+        }
+    }
+
+    private void openHelp(boolean fromMenu) {
+        helpOpen = true;
+        helpFromMenu = fromMenu;
+        menuPanel.setVisibility(View.GONE);
+        statusLabel.setVisibility(View.GONE);
+        helpPanel.setVisibility(View.VISIBLE);
+        updateHint();
+    }
+
+    private void closeHelp() {
+        if (!helpOpen) return;
+        helpOpen = false;
+        helpPanel.setVisibility(View.GONE);
+        if (helpFromMenu && settingsOpen) {
+            settingsItem = CaptureOptions.ITEM_CLOSE;
+            showSettings();
+        } else {
+            updateHint();
+            setStatus("Справка: «Назад» → «Справка»");
+        }
     }
 
     private void applyStagePlacement() {
@@ -1125,21 +1570,18 @@ public final class MainActivity extends Activity {
         stage.setTranslationY(options.previewShift() * h);
     }
 
-    private void nextSettingItem() {
-        settingsItem = (settingsItem + 1) % CaptureOptions.ITEM_COUNT;
-        showSettings();
-    }
-
     // ---------------------------------------------------------------- input
 
     private boolean handleTouch(MotionEvent event) {
-        lastTouchEventAt = SystemClock.elapsedRealtime();
+        long now = SystemClock.elapsedRealtime();
+        lastTouchEventAt = now;
         int action = event.getActionMasked();
         float slop = dp(24);
         if (action == MotionEvent.ACTION_DOWN) {
+            arbiter.touchDown(now);
             touchDownX = event.getX();
             touchDownY = event.getY();
-            touchDownAt = SystemClock.elapsedRealtime();
+            touchDownAt = now;
             touchMoved = false;
             touchLongFired = false;
             mainHandler.removeCallbacks(touchLongPress);
@@ -1150,78 +1592,211 @@ public final class MainActivity extends Activity {
                 mainHandler.removeCallbacks(touchLongPress);
             }
         } else if (action == MotionEvent.ACTION_UP) {
+            arbiter.touchUp(now);
             mainHandler.removeCallbacks(touchLongPress);
-            lastTouchUpAt = SystemClock.elapsedRealtime();
+            lastTouchUpAt = now;
             if (touchLongFired) return true;
             int swipe = TouchGesture.swipeDirection(touchDownX, touchDownY, event.getX(), event.getY(), dp(55));
             if (swipe != 0) {
-                cancelPendingTap();
-                onSwipe(swipe);
+                if (options.swipeReversed) swipe = -swipe;
+                if (arbiter.acceptSwipe(now)) onStep(swipe);
             } else if (TouchGesture.isTap(touchDownX, touchDownY, event.getX(), event.getY(),
                     lastTouchUpAt - touchDownAt, slop)) {
-                onTapDetected();
+                onTap();
             }
         } else if (action == MotionEvent.ACTION_CANCEL) {
+            arbiter.touchUp(now);
             mainHandler.removeCallbacks(touchLongPress);
         }
         return true;
     }
 
-    private void onSwipe(int direction) {
-        if (settingsOpen) changeSetting(direction);
+    /** Ring wheel / DPAD / volume keys: filtered so one click = one step. */
+    private void onKeyStep(int direction) {
+        if (options.swipeReversed) direction = -direction;
+        boolean zooming = !helpOpen && !actionsOpen && !settingsOpen;
+        long now = SystemClock.elapsedRealtime();
+        if (zooming ? arbiter.acceptZoomKey(now) : arbiter.acceptKey(now)) onStep(direction);
+    }
+
+    /** One clean step forward (+1) or back (-1). */
+    private void onStep(int direction) {
+        if (helpOpen) return;
+        if (actionsOpen) moveAction(direction);
+        else if (settingsOpen) changeSetting(direction);
         else changeZoom(direction);
     }
 
-    private void onTapDetected() {
-        if (singleTapPending) {
-            cancelPendingTap();
-            onDoubleTap();
-        } else {
-            singleTapPending = true;
-            mainHandler.postDelayed(singleTap, TouchGesture.DOUBLE_TAP_MS);
-        }
-    }
-
-    private void cancelPendingTap() {
-        singleTapPending = false;
-        mainHandler.removeCallbacks(singleTap);
-    }
-
     private void cancelTouchCallbacks() {
-        cancelPendingTap();
         mainHandler.removeCallbacks(touchLongPress);
     }
 
-    private void onSingleTap() {
-        if (settingsOpen) {
-            nextSettingItem();
+    /** Single tap. No double tap anywhere: the system takes it. */
+    private void onTap() {
+        if (helpOpen) {
+            closeHelp();
+        } else if (actionsOpen) {
+            runAction(actionItem);
+        } else if (settingsOpen) {
+            onSettingsTap();
         } else if (recording) {
             stopVideo();
         } else if (options.tapShutter) {
             takePhoto();
+        } else {
+            setStatus("Съёмка тапом выключена (меню)");
         }
     }
 
-    private void onDoubleTap() {
-        if (recording) return;
-        if (settingsOpen) closeSettings();
-        else openSettings();
+    /** Ring wheel press (mouse "Enter"): photo; OK inside menus; stops a recording. */
+    private void onRingWheelPress() {
+        if (helpOpen || actionsOpen || settingsOpen || recording) onTap();
+        else takePhoto();
+    }
+
+    private MediaSession mediaSession;
+    private long lastWheelPressAt = Long.MIN_VALUE / 2;
+
+    /**
+     * Pressing the ring wheel sends MEDIA_PLAY_PAUSE. If no app holds an
+     * active media session, the system passes that key on to the last player,
+     * which can be an audiobook on the phone connected over Bluetooth. While the
+     * camera is open we hold an active "playing" session that swallows media keys.
+     */
+    private void claimMediaButtons() {
+        try {
+            if (mediaSession == null) {
+                mediaSession = new MediaSession(this, "RokidZoomRuButtons");
+                mediaSession.setCallback(new MediaSession.Callback() {
+                    @Override public boolean onMediaButtonEvent(Intent intent) {
+                        KeyEvent key = intent == null ? null
+                                : (KeyEvent) intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                        if (key != null && key.getAction() == KeyEvent.ACTION_DOWN && key.getRepeatCount() == 0) {
+                            int code = key.getKeyCode();
+                            if (code == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || code == KeyEvent.KEYCODE_MEDIA_PLAY
+                                    || code == KeyEvent.KEYCODE_MEDIA_PAUSE || code == KeyEvent.KEYCODE_HEADSETHOOK) {
+                                handleWheelPress();
+                            }
+                        }
+                        return true;
+                    }
+                }, mainHandler);
+            }
+            mediaSession.setPlaybackState(new PlaybackState.Builder()
+                    .setActions(PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE)
+                    .setState(PlaybackState.STATE_PLAYING, 0L, 0f)
+                    .build());
+            mediaSession.setActive(true);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Media session unavailable", error);
+        }
+    }
+
+    private void releaseMediaButtons() {
+        if (mediaSession == null) return;
+        try {
+            mediaSession.setActive(false);
+            mediaSession.release();
+        } catch (RuntimeException ignored) {
+        }
+        mediaSession = null;
+    }
+
+    /** Wheel press from the activity key path or from the media session; never twice. */
+    private void handleWheelPress() {
+        long now = SystemClock.elapsedRealtime();
+        mainHandler.removeCallbacks(ringRightButton);
+        suppressEnterUntil = now + 500L;
+        if (now - lastWheelPressAt < 400L) return;
+        lastWheelPressAt = now;
+        onRingWheelPress();
+    }
+
+    /** Right ring button (mouse "properties"): opens the menu; inside menus goes back. */
+    private void onRingRightButton() {
+        if (helpOpen) closeHelp();
+        else if (settingsOpen) closeSettings();
+        else if (actionsOpen) closeActions();
+        else if (recording) setStatus("Стоп записи: нажать колесо");
+        else openActions();
+    }
+
+    /** The right ring button sends a bare ENTER; the wheel press sends PLAY_PAUSE + ENTER.
+     *  Wait briefly so a PLAY_PAUSE arriving just after the ENTER can cancel it. */
+    private final Runnable ringRightButton = new Runnable() {
+        @Override public void run() { onRingRightButton(); }
+    };
+
+    static boolean isRingDevice(KeyEvent event) {
+        InputDevice d = event.getDevice();
+        String name = d == null ? null : d.getName();
+        return name != null && name.toUpperCase(java.util.Locale.ROOT).contains("RGR");
     }
 
     private void onTouchLongPress() {
-        if (settingsOpen || !options.tapShutter) return;
-        if (recording) stopVideo();
-        else startVideo();
+        if (helpOpen) closeHelp();
+        else if (actionsOpen) closeActions();
+        else if (settingsOpen) closeSettings();
+        else if (recording) stopVideo();
+        else openActions();
     }
 
-    /** Ring scroll wheel or any pointer scroll: zoom, or change the selected setting. */
+    // ---------------------------------------------------------------- action menu (hold 1 s)
+
+    private void openActions() {
+        if (recording) return;
+        actionsOpen = true;
+        actionItem = ACT_SETTINGS;
+        statusLabel.setVisibility(View.GONE);
+        showActions();
+    }
+
+    private void closeActions() {
+        if (!actionsOpen) return;
+        actionsOpen = false;
+        menuPanel.setVisibility(View.GONE);
+        updateHint();
+    }
+
+    private void moveAction(int direction) {
+        actionItem = (actionItem + (direction >= 0 ? 1 : ACTIONS.length - 1)) % ACTIONS.length;
+        showActions();
+    }
+
+    private void showActions() {
+        updateHint();
+        StringBuilder sb = new StringBuilder("МЕНЮ\n");
+        for (int i = 0; i < ACTIONS.length; i++) {
+            sb.append(i == actionItem ? "▶ " : "  ").append(ACTIONS[i]).append('\n');
+        }
+        sb.append("крутить колесо: выбрать · нажать: выполнить\nправая кнопка: закрыть · «Назад»: выйти");
+        menuPanel.setText(sb.toString());
+        menuPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void runAction(int item) {
+        closeActions();
+        if (item == ACT_VIDEO) {
+            startVideo();
+        } else if (item == ACT_SETTINGS) {
+            openSettings();
+        } else if (item == ACT_HELP) {
+            openHelp(false);
+        } else if (item == ACT_EXIT) {
+            userLeaving = true;
+            videoStartPending = false;
+            finish();
+        }
+    }
+
+    /** Ring scroll wheel or any pointer scroll: zoom, or move in the menus. */
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
         if (event.getActionMasked() == MotionEvent.ACTION_SCROLL &&
                 (event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0) {
             float v = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
             if (v == 0f) v = event.getAxisValue(MotionEvent.AXIS_HSCROLL);
             if (v != 0f) {
-                onSwipe(v > 0f ? 1 : -1);
+                onKeyStep(v > 0f ? 1 : -1);
                 return true;
             }
         }
@@ -1232,16 +1807,28 @@ public final class MainActivity extends Activity {
         Log.d(TAG, "onKeyDown key=" + KeyEvent.keyCodeToString(keyCode) + " repeat=" + event.getRepeatCount());
         if (keyCode == KeyEvent.KEYCODE_NOTIFICATION) {
             lastTouchEventAt = SystemClock.elapsedRealtime();
+            // Every temple/ring gesture starts with NOTIFICATION; nothing to do with it.
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_UP ||
+        // Measured on RV101 (test 1.3): one swipe forward on the temple, or one
+        // wheel step forward, sends DPAD_RIGHT + DPAD_DOWN; backward sends
+        // DPAD_LEFT + DPAD_UP. So RIGHT/DOWN = +1 and LEFT/UP = -1 (the old
+        // RIGHT/UP mapping made each swipe cancel itself: the zoom "dance").
+        if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
-            if (event.getRepeatCount() == 0) onSwipe(1);
+            if (event.getRepeatCount() == 0) onKeyStep(1);
             return true;
         }
-        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+        if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_UP ||
                 keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            if (event.getRepeatCount() == 0) onSwipe(-1);
+            if (event.getRepeatCount() == 0) onKeyStep(-1);
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+            // Pressing the ring wheel sends MEDIA_PLAY_PAUSE + ENTER (test 1.3); the
+            // right ring button and a temple tap send ENTER only. So PLAY_PAUSE is
+            // the ring's own "photo / OK" key; swallow the ENTER that comes with it.
+            if (event.getRepeatCount() == 0) handleWheelPress();
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
@@ -1252,8 +1839,7 @@ public final class MainActivity extends Activity {
             if (event.getRepeatCount() == 0) buttonDownAt = SystemClock.elapsedRealtime();
             else if (!longPressHandled && event.isLongPress()) {
                 longPressHandled = true;
-                if (settingsOpen) closeSettings();
-                else startVideo();
+                onTouchLongPress();
             }
             return true;
         }
@@ -1262,20 +1848,25 @@ public final class MainActivity extends Activity {
 
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
         Log.d(TAG, "onKeyUp key=" + KeyEvent.keyCodeToString(keyCode) + " longHandled=" + longPressHandled);
-        if (keyCode == KeyEvent.KEYCODE_NOTIFICATION) return true;
+        if (keyCode == KeyEvent.KEYCODE_NOTIFICATION || keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return true;
+        if ((keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)
+                && SystemClock.elapsedRealtime() < suppressEnterUntil) {
+            return true;
+        }
         if (keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
             // Some touch surfaces / the ring report a tap only as a key. If no touch
             // event was seen just now, treat the key as a tap.
-            if (lastTouchUpAt < 0L || SystemClock.elapsedRealtime() - lastTouchUpAt > 400L) {
+            if (isRingDevice(event)) {
+                mainHandler.removeCallbacks(ringRightButton);
+                mainHandler.postDelayed(ringRightButton, 150L);
+            } else if (lastTouchUpAt < 0L || SystemClock.elapsedRealtime() - lastTouchUpAt > 400L) {
                 lastTouchEventAt = SystemClock.elapsedRealtime();
-                onTapDetected();
+                onTap();
             }
             return true;
         }
         if (keyCode == KeyEvent.KEYCODE_CAMERA || keyCode == KeyEvent.KEYCODE_STEM_PRIMARY) {
-            if (settingsOpen && !longPressHandled) closeSettings();
-            else if (recording && !longPressHandled) stopVideo();
-            else if (!recording && !longPressHandled) takePhoto();
+            if (!longPressHandled) onTap();
             longPressHandled = false;
             return true;
         }
@@ -1305,7 +1896,7 @@ public final class MainActivity extends Activity {
         int viewWidth = root.getWidth();
         int viewHeight = root.getHeight();
         if (viewWidth == 0 || viewHeight == 0) {
-            root.post(this::configurePreviewLayout);
+            root.post(layoutPreview);
             return;
         }
         int displayDegrees = rotationDegrees(getDisplay().getRotation());
@@ -1358,20 +1949,23 @@ public final class MainActivity extends Activity {
         // RV101's HUD is 480x640 (3:4 portrait); a 4:3 stream also matches the
         // full 4:3 sensor, so the frame overlay shows exactly what gets saved.
         if (!hudRatioCandidates.isEmpty()) candidates = hudRatioCandidates;
-        return Collections.max(candidates, Comparator.comparingLong(size -> (long) size.getWidth() * size.getHeight()));
+        return Collections.max(candidates, BY_AREA);
     }
 
     private String timestamp() {
         return new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
     }
 
-    private void setStatus(String message) {
-        runOnUiThread(() -> {
-            statusLabel.setText(message);
-            statusLabel.setVisibility(View.VISIBLE);
-            mainHandler.removeCallbacks(hideStatus);
-            // Hints disappear after a few seconds so they do not cover the picture.
-            if (!settingsOpen && !recording) mainHandler.postDelayed(hideStatus, 6000L);
+    private void setStatus(final String message) {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (settingsOpen || helpOpen || actionsOpen) return;
+                statusLabel.setText(message);
+                statusLabel.setVisibility(View.VISIBLE);
+                mainHandler.removeCallbacks(hideStatus);
+                // Status disappears after a few seconds so it does not cover the picture.
+                if (!recording) mainHandler.postDelayed(hideStatus, STATUS_VISIBLE_MS);
+            }
         });
     }
 

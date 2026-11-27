@@ -18,4 +18,20 @@ public final class ZoomMathTest {
         assertArrayEquals(new int[]{0, 0, 4032, 3024},
                 ZoomMath.cropEdges(0, 0, 4032, 3024, 0.5f, 8f));
     }
+
+    @Test public void barShowsCurrentStep() {
+        org.junit.Assert.assertEquals("1× ■□□□□□□□□□□□ 4×", ZoomMath.bar(1f, 4f));
+        org.junit.Assert.assertEquals("1× ■■■■■■■■■■■■ 4×", ZoomMath.bar(4f, 4f));
+        org.junit.Assert.assertEquals("1× ■■■■■■□□□□□□ 4×", ZoomMath.bar(2.4f, 4f));
+    }
+
+    @org.junit.Test public void stepsAreSmoothAndDoNotDrift() {
+        float z = 1f;
+        for (int i = 0; i < 30; i++) z = ZoomMath.step(z, 1, 0.1f, 4f);
+        org.junit.Assert.assertEquals(4f, z, 0.0001f);
+        org.junit.Assert.assertEquals(4f, ZoomMath.step(z, 1, 0.1f, 4f), 0.0001f);
+        org.junit.Assert.assertEquals(3.9f, ZoomMath.step(z, -1, 0.1f, 4f), 0.0001f);
+        org.junit.Assert.assertEquals(1f, ZoomMath.step(1.1f, -1, 0.2f, 4f), 0.0001f);
+        org.junit.Assert.assertEquals(1.2f, ZoomMath.step(1f, 1, 0.2f, 4f), 0.0001f);
+    }
 }

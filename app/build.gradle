@@ -15,12 +15,20 @@ android {
         applicationId 'io.github.ksuzukigh.rokidzoomincamera.ru'
         minSdk 32
         targetSdk 32
-        versionCode 200
-        versionName '2.0.0-ru'
+        versionCode 280
+        versionName '2.8.0-ru'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
 
     signingConfigs {
+        // Shared debug key (keystore/debug.keystore) so APKs built anywhere
+        // (here, GitHub Actions, a laptop) update each other without reinstalling.
+        debug {
+            storeFile rootProject.file('keystore/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
         release {
             storeFile file(releaseKeystorePath)
             storePassword releaseStorePassword

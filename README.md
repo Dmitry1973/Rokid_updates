@@ -1,105 +1,83 @@
-# ZOOM Камера RU для Rokid Glasses RV101
+# ZOOM Camera RU for Rokid Glasses RV101
 
-Доработанная версия [Rokid ZOOM IN CAMERA](https://github.com/ksuzukigh/rokid-zoom-in-camera)
-(автор Keiichi Suzuki, лицензия MIT) плюс тестовое приложение для кнопок и кольца.
+An extended fork of [Rokid ZOOM IN CAMERA](https://github.com/ksuzukigh/rokid-zoom-in-camera)
+(by Keiichi Suzuki, MIT license), plus a test app for the glasses' buttons and the ring.
+The on-glasses interface is in Russian; code, docs and history are in English.
 
-Проект собирает два APK:
+The project builds two APKs:
 
-| Модуль | Приложение на очках | Зачем |
+| Module | App on the glasses | Purpose |
 |---|---|---|
-| `app` | **ZOOM Камера RU** | камера с зумом, форматами кадра, выбором разрешения и к/с |
-| `inputtest` | **Тест кнопок и кольца** | показывает, какие сигналы присылают кнопка, дужка и кольцо RGR06 |
+| `app` | **ZOOM Камера RU** (2.8.0-ru) | camera with smooth digital zoom, photo and video formats, resolution and fps choice |
+| `inputtest` | **Тест кнопок и кольца** (1.4) | shows which signals the temple touchpad, the button and the RGR06 ring send |
 
-Новая камера ставится **рядом** с оригинальной (у неё другой ID), удалять оригинал не нужно.
+The camera installs **next to** the original app (different application ID).
 
-## Что изменено по сравнению с оригиналом 1.2.1
+## Features (current version)
 
-- **Съёмка тапом по дужке.** Тап — фото, удержание (~1 с) — старт/стоп видео, тап во время записи — стоп.
-  Это обход проблемы, когда физическую кнопку перехватывает системная камера очков.
-  Физическая кнопка тоже работает, если система её отдаёт.
-- **Автопереподключение камеры.** Если камеру забрала системная камера, приложение само
-  возвращает превью и пишет на экране, что произошло.
-- **Зум в фото гарантирован.** Снимается полный кадр с сенсора, а зум и формат применяются
-  программно, поэтому файл всегда совпадает с тем, что видно в превью.
-  Разрешение файла честное: при 2× это 2016×1512, при 4× — 1008×756 (растягивать картинку бессмысленно).
-- **Форматы фото:** 4:3 (весь кадр), 16:9, 3:2, 1:1.
-- **Видео:** выбор разрешения из всех, что поддерживает камера, и частоты кадров (24/30/60 —
-  что реально есть в камере). Битрейт подбирается автоматически.
-- **Рамка кадра на экране:** уголки показывают область видео, пунктир — область фото (если не 4:3).
-- **Зум с шагом 0,5×:** 1.0 / 1.5 / 2.0 / 2.5 / 3.0 / 3.5 / 4.0.
-- **Колесо кольца / прокрутка / кнопки вверх-вниз** тоже меняют зум (если кольцо их присылает —
-  это покажет тестовое приложение).
-- **Размер и высота картинки** настраиваются в меню (двойной тап → «Размер картинки» / «Высота картинки»),
-  если изображение сидит слишком низко или высоко. Подсказки внизу сами прячутся через 6 секунд.
-- Интерфейс на русском. Настройки запоминаются.
+- **Ring works like a mouse, no duplicate actions:** press the wheel = photo / OK in menus /
+  stop recording; turn the wheel = zoom / move in menus; right ring button = menu and settings
+  (back inside menus). Without the ring: temple tap = photo / OK, swipe = zoom, Back = menu.
+- **Smooth zoom** 1×–4× in 0.1× steps (0.2 / 0.5 selectable), also while recording video.
+- **Photo formats with orientation:** full frame, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 1:1.
+  The full sensor frame is captured and zoom + crop are applied in software (`PhotoProcessor`),
+  so the file always matches the viewfinder. EXIF rotation is taken into account.
+- **Video formats:** native (the camera gives 9:16 portrait on RV101), 16:9, 9:16, 4:3, 3:4, 1:1.
+  Non-native shapes are rendered through OpenGL (`VideoGlRenderer`): the camera frame is turned
+  upright, cropped and encoded. If a shape fails to start, recording falls back to native.
+- **Frame-only view (default):** no camera picture on the HUD, only the outline of what gets
+  captured; it shrinks with zoom. «Масштаб рамки» matches it to what the eye sees.
+- **Viewfinder shows the real frame (picture view):** everything outside the photo (or video while recording)
+  is dimmed. File info at the top: `ФОТО 16:9 · 9.1 МП`, `ВИДЕО 16:9 1072p30`, last file.
+- **Media-key guard:** while the camera is open, an active media session swallows the ring's
+  PLAY_PAUSE so it does not start a player on the paired phone.
+- **Crash report:** after a crash the next start shows a notice and copies the stack trace to
+  `Download/ZoomCamera_crash_*.txt`.
+- Camera auto-reconnect when the system camera takes it; settings are remembered.
 
-> ⚠️ Кнопка фото на **кольце** отправляет команду прямо системной камере очков, в обход приложения.
-> Пока снимайте **тапом по дужке**. Тестовое приложение покажет, можно ли перехватить кольцо.
+Do not press the glasses' camera button or the ring's **left** button: the system camera takes them.
 
-### Управление
+## Settings (right ring button → «Настройки фото и видео»)
 
-| Действие | Жест |
+| Item | Values |
 |---|---|
-| Зум | свайп вперёд / назад по дужке |
-| Фото | тап по дужке или короткое нажатие кнопки |
-| Видео старт/стоп | удержание пальца на дужке ~1 с, или долгое нажатие кнопки |
-| Меню настроек | двойной тап |
-| В меню: следующий пункт / изменить / выйти | тап / свайп / двойной тап (или «Назад») |
+| Формат ФОТО (photo format) | full frame, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 1:1 |
+| Размер ФОТО (photo size) | max, or long side up to 3000 / 2000 / 1280 px |
+| Качество JPEG | 100, 95 (default), 90, 85, 80, 70 % |
+| Формат ВИДЕО (video format) | native, 16:9 (default), 9:16, 4:3, 3:4, 1:1 |
+| Разрешение ВИДЕО | all recorder sizes of the camera (caps the long side) |
+| Кадров/с ВИДЕО | what the camera supports (24 / 30 / 60) |
+| Съёмка тапом | temple tap takes photos on / off |
+| Размер / Высота картинки | viewfinder size 100–50 % and vertical shift |
+| Свайп зума | normal / reversed |
+| Шаг зума | 0.1 / 0.2 / 0.5 per click |
 
-## Сборка
+The menu shows the resulting photo and video size, e.g. `Видео получится: 1920×1072 (16:9)`.
 
-### Вариант A — без установки чего-либо (GitHub Actions)
+## Building
 
-1. Создай на GitHub новый репозиторий (можно приватный) и залей туда содержимое этой папки.
-2. Открой вкладку **Actions** — сборка запустится сама (или нажми **Run workflow**).
-3. Через ~5 минут в завершённом запуске внизу будет архив **rokid-zoom-ru-apk** —
-   в нём оба APK (`app-debug.apk` = камера, `inputtest-debug.apk` = тест).
+All builds are signed with the shared key `keystore/debug.keystore` (password `android`),
+so new versions install over old ones.
 
-### Вариант B — Windows, Android Studio
+- **GitHub Actions:** every push builds the artifact **rokid-zoom-ru-apk** with both APKs.
+- **Android Studio:** open the project, *Build → Build APK(s)*.
+- **Command line:** JDK 17 + Android SDK 35, then `./gradlew test assembleDebug`.
+- Without Gradle (used in cloud sessions where Google Maven is unreachable): aapt → javac
+  `--release 8` against android.jar → dx → zipalign → apksigner. That is why the code has
+  **no lambdas or method references**.
 
-1. Установи [Android Studio](https://developer.android.com/studio).
-2. *File → Open* → папка проекта. Дождись синхронизации Gradle (первый раз скачает SDK).
-3. Меню *Build → Build App Bundle(s) / APK(s) → Build APK(s)*.
-4. APK: `app\build\outputs\apk\debug\app-debug.apk` и `inputtest\build\outputs\apk\debug\inputtest-debug.apk`.
+## Installing on the glasses
 
-### Вариант C — WSL / Linux, командная строка
+Via the Hi Rokid phone app: **Home → Tools → Glasses app management → Install new app** → pick the APK.
 
-```bash
-sudo apt install -y openjdk-17-jdk unzip
-mkdir -p ~/android-sdk/cmdline-tools && cd ~/android-sdk/cmdline-tools
-wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-unzip commandlinetools-linux-*_latest.zip && mv cmdline-tools latest
-export ANDROID_HOME=~/android-sdk
-yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0"
+## Input facts on RV101 (firmware 1.29)
 
-cd /путь/к/RokidZoomRu
-echo "sdk.dir=$ANDROID_HOME" > local.properties
-chmod +x gradlew
-./gradlew test assembleDebug
-```
+The temple touchpad sends no touch events to apps, only keys. Every gesture starts with
+NOTIFICATION(83). Tap = ENTER; swipe forward = DPAD_RIGHT + DPAD_DOWN, back = DPAD_LEFT + DPAD_UP
+(the ring wheel sends the same in bursts); wheel press = MEDIA_PLAY_PAUSE + ENTER; right ring
+button = ENTER; double tap is taken by the system; glasses button and left ring button =
+system camera. Ring and temple are told apart only by the InputDevice name (`RGR…`).
 
-## Установка на очки
+## License
 
-Как и оригинал — через Hi Rokid на телефоне:
-**Главная → Инструменты → Управление приложениями очков → Установить новое приложение** → выбрать APK.
-
-## Что проверить
-
-1. **Тест кнопок и кольца:** открой, по очереди:
-   - короткое и долгое нажатие физической кнопки;
-   - тап, двойной тап, удержание, свайпы по дужке;
-   - кольцо: прокрутка колеса в обе стороны, нажатия.
-
-   Сфотографируй экран после каждой группы (или пришли видео) — по строкам `KEY`, `GEN`, `TOUCH`, `BC`
-   будет видно, что именно приходит. Выход — «Назад» два раза.
-2. **ZOOM Камера RU:** фото тапом на 1× и 4×, видео удержанием, разные форматы и разрешения.
-   Имена файлов начинаются с `RokidZoomRu_` и содержат зум и формат, например
-   `RokidZoomRu_20261124_191500_2.0x_16x9.jpg`.
-
-Если видео на каком-то разрешении/к/с не стартует, приложение так и напишет — значит,
-камера очков эту комбинацию не поддерживает.
-
-## Лицензия
-
-MIT — см. [LICENSE](LICENSE). Исходный проект © 2026 Keiichi Suzuki.
+MIT, see [LICENSE](LICENSE). Original project © 2026 Keiichi Suzuki.
