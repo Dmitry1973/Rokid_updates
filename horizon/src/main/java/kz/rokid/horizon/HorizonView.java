@@ -24,6 +24,7 @@ final class HorizonView extends View {
     double pitch;            // degrees, zeroed
     double roll;             // degrees, zeroed
     double slip;             // degrees, + = ball right
+    boolean slipBall = true; // ball in a tube (default) or G1000 brick
     double heading = Double.NaN;
     boolean headingMagnetic;
     double turnRate = Double.NaN; // deg/s, + = right
@@ -142,7 +143,7 @@ final class HorizonView extends View {
 
         // ---- attitude indicator, kept high on the screen
         float top = hasPressure ? 200f : 180f;
-        float r = Math.min(w / 2f - 30f, Math.min(180f, (h - top - 20f) / 2f));
+        float r = Math.min(w / 2f - 30f, Math.min(165f, (h - top - 20f) / 2f));
         float cx = cxw;
         float cy = top + r;
 
@@ -196,16 +197,18 @@ final class HorizonView extends View {
         path.lineTo(cx + 11, py + 16);
         path.close();
         c.drawPath(path, fill);
-        // slip / skid: trapezoid under the pointer, full deflection at 10°
         double s = Math.max(-10, Math.min(10, slip));
-        float sx = cx + (float) (s * 2.6);
-        path.reset();
-        path.moveTo(sx - 11, py + 20);
-        path.lineTo(sx + 11, py + 20);
-        path.lineTo(sx + 15, py + 27);
-        path.lineTo(sx - 15, py + 27);
-        path.close();
-        c.drawPath(path, Math.abs(slip) > 5 ? stroke : fill);
+        if (!slipBall) {
+            // slip / skid: G1000 brick under the pointer, full deflection at 10°
+            float sx = cx + (float) (s * 2.6);
+            path.reset();
+            path.moveTo(sx - 11, py + 20);
+            path.lineTo(sx + 11, py + 20);
+            path.lineTo(sx + 15, py + 27);
+            path.lineTo(sx - 15, py + 27);
+            path.close();
+            c.drawPath(path, Math.abs(slip) > 5 ? stroke : fill);
+        }
 
         // fixed aircraft symbol
         float wing = r * 0.42f;
@@ -230,6 +233,34 @@ final class HorizonView extends View {
             float tx = cx + (float) (tr2 / 3.0 * std);
             c.drawLine(cx, ty, tx, ty, stroke);
         }
+        if (slipBall) drawBall(c, cx, cy + r + 42, s);
+    }
+
+    /**
+     * Classic inclinometer: a ball in a slightly curved tube with two reference
+     * lines. Full deflection (ball at the end of the tube) at 10°.
+     */
+    private void drawBall(Canvas c, float cx, float by, double s) {
+        float half = 88f;     // half length of the tube
+        float tubeR = 15f;    // half height of the tube
+        float sag = 10f;      // how much the tube curves down in the middle
+        path.reset();
+        path.moveTo(cx - half, by - tubeR - sag);
+        path.quadTo(cx, by - tubeR + sag, cx + half, by - tubeR - sag);
+        path.lineTo(cx + half, by + tubeR - sag);
+        path.quadTo(cx, by + tubeR + sag, cx - half, by + tubeR - sag);
+        path.close();
+        c.drawPath(path, thin);
+        // reference lines: ball between them = coordinated
+        float ref = tubeR + 3f;
+        c.drawLine(cx - ref, by - tubeR - 6, cx - ref, by + tubeR + 6, stroke);
+        c.drawLine(cx + ref, by - tubeR - 6, cx + ref, by + tubeR + 6, stroke);
+        // ball follows the tube curve (quadratic: lowest in the middle)
+        float travel = half - tubeR + 1f;
+        float dx = (float) (s / 10.0 * travel);
+        float t = dx / half;
+        float yOff = -sag * t * t; // tube centre line: by at the middle, by - sag at the ends
+        c.drawCircle(cx + dx, by + yOff, tubeR - 3f, fill);
     }
 
     private void drawMenu(Canvas c) {

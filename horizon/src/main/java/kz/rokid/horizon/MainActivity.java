@@ -45,7 +45,8 @@ public class MainActivity extends Activity implements SensorEventListener {
     private static final int M_SOURCE = 2;
     private static final int M_ALT_ZERO = 3;
     private static final int M_ALT_STD = 4;
-    private static final int M_CLOSE = 5;
+    private static final int M_SLIP = 5;
+    private static final int M_CLOSE = 6;
     private final List<Integer> menuActions = new ArrayList<Integer>();
 
     private static final double STD_HPA = 1013.25;
@@ -109,6 +110,7 @@ public class MainActivity extends Activity implements SensorEventListener {
         if (prefs.contains("altZeroM")) altZeroM = prefs.getFloat("altZeroM", 0f);
 
         view.hasPressure = pressure != null;
+        view.slipBall = prefs.getBoolean("slipBall", true);
         view.altRelative = !Double.isNaN(altZeroM);
         updateZeroNote();
     }
@@ -311,6 +313,7 @@ public class MainActivity extends Activity implements SensorEventListener {
             addItem(M_ALT_ZERO, "Высота: 0 здесь");
             addItem(M_ALT_STD, "Высота: стандарт 1013.25");
         }
+        addItem(M_SLIP, view.slipBall ? "Скольжение: шарик" : "Скольжение: трапеция G1000");
         addItem(M_CLOSE, "Закрыть");
         view.menuIndex = Math.min(view.menuIndex, view.menuItems.size() - 1);
         view.menuOpen = true;
@@ -364,6 +367,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                 view.altRelative = false;
                 closeMenu();
                 flash("высота по 1013.25");
+                break;
+            case M_SLIP:
+                view.slipBall = !view.slipBall;
+                prefs.edit().putBoolean("slipBall", view.slipBall).apply();
+                openMenu(); // refresh the label, stay in the menu
                 break;
             default:
                 closeMenu();
