@@ -1,242 +1,176 @@
-# Rokid Glasses RV101 — сводка по прошивке и доработкам
+# Rokid Glasses RV101: firmware notes and app work
 
-Состояние на 25.11.2026 (версия 2.7.1-ru). Документ для переноса контекста в проект / новую сессию Claude Code:
-«прочитай docs/HANDOFF.md» — и сессия в курсе.
+State as of 2026-11-27 (camera 2.7.1-ru, input test 1.4). This document carries the context to a
+new project or Claude Code session: "read docs/HANDOFF.md" and the session is up to date.
+Chat with the owner is in Russian; everything in the repository is in English.
 
 ---
 
-## 1. Оборудование и окружение
+## 1. Hardware and environment
 
-| Что | Значение |
+| What | Value |
 |---|---|
-| Очки | Rokid Glasses **RV101** |
-| Прошивка | **1.29.013-20261110-150201**, YodaOS-Sprite |
-| Автообновление прошивки | включено → **рекомендуется выключить** на время разработки |
-| Часы на очках | стоят на пекинском времени (UTC+8), в именах файлов +3 ч к Актау |
-| ОС очков для приложений | Android 12 (API 32), HUD 480×640, портрет, монохромный зелёный |
-| Кольцо | Rokid Ring **RGR06** (колесо прокрутки + кнопка) |
-| Доп. питание | 2 магнитных аккумулятора на дужку |
-| Телефон | Samsung Galaxy S25+, Android 17, One UI 9.0 (глобальная версия) |
-| Приложение-компаньон | Hi Rokid (Google Play) |
-| Установка APK на очки | Hi Rokid → Инструменты → Управление приложениями очков → Установить |
-| ИИ-модели в прошивке | Авто, Gemini, DeepSeek, + ещё один пункт (ChatGPT **нет**, Claude **нет**) |
-| Кабель разработчика | 5-пиновый заказан (в комплекте нет), ожидается ~начало декабря |
-| Ноутбук | два SSD по 4 ТБ: Ubuntu и Windows (dual boot); работа — Ubuntu + Claude Code |
+| Glasses | Rokid Glasses **RV101** |
+| Firmware | **1.29.013-20261110-150201**, YodaOS-Sprite |
+| Firmware auto-update | on → **turn it off** while developing |
+| Clock on the glasses | Beijing time (UTC+8); file names are +3 h vs Aktau |
+| App platform | Android 12 (API 32), HUD 480×640 portrait, monochrome green |
+| Ring | Rokid Ring **RGR06** (scroll wheel + buttons) |
+| Extra power | 2 magnetic temple batteries |
+| Phone | Samsung Galaxy S25+, Android 17, One UI 9.0 |
+| Companion app | Hi Rokid (Google Play) |
+| Installing APKs | Hi Rokid → Tools → Glasses app management → Install |
+| Built-in AI models | Auto, Gemini, DeepSeek + one more (no ChatGPT, no Claude) |
+| Developer cable | 5-pin, ordered (not in the box), expected early December |
+| Laptop | dual boot Ubuntu / Windows (2× 4 TB SSD); work on Ubuntu + Claude Code |
 
-Камера: **оптического зума нет**, только цифровой (кроп). Системная камера сохраняет 3024×2268,
-сенсор отдаёт до 4032×3024.
-
----
-
-## 2. Диагностика: почему не работала ZOOM IN CAMERA
-
-Исходное приложение: [ksuzukigh/rokid-zoom-in-camera](https://github.com/ksuzukigh/rokid-zoom-in-camera)
-v1.2.1 (коммит `c72eb42`, MIT). Установленный APK совпадает с этим коммитом.
-
-Симптомы: зум виден в превью, но файл сохраняется в 1×; после фото превью не возвращается;
-видео — без превью и рамки, только таймер.
-
-**Причина (подтверждена):** фото и видео делает **системная служба камеры** очков, а не приложение.
-- Приложение при запуске просит систему отключить кнопку — broadcast
-  `com.rokid.os.sprite.assistserver` / ключи `settings_interaction_shortPressFun`,
-  `settings_interaction_longPressFun` → `none`. **На прошивке 1.29 это игнорируется**
-  (автор тестировал летом, на ~1.26).
-- **Кнопка фото на кольце** шлёт команду прямо системной камере, приложение её вообще не видит.
-- Системная камера забирает камеру у приложения → превью замирает.
-
-Доказательства — файлы, снятые «в приложении» кнопкой и кольцом:
-`img-20261124-213831-ca-P0-0.jpg`, `img-20261124-214650-64-P0-0.jpg` — 3024×2268, без зума,
-имя системной камеры (приложение называет файлы `RokidZoomIn_…_4.0x.jpg`, 4032×3024).
-
-Прочие замечания пользователя к оригиналу:
-- интерфейс и подсказки на японском;
-- превью «сильно занижено» — неудобно смотреть, у штатной камеры нижний край нормальный;
-- форматов 16:9 и т.п. в оригинале нет и не было.
+Camera: **no optical zoom**, digital (crop) only. The system camera saves 3024×2268; the sensor
+gives up to 4032×3024. The camera picture is upright only when turned 90° (sensor orientation 90),
+so its native video is 9:16 portrait.
 
 ---
 
-## 3. Что сделано: проект RokidZoomRu (этот репозиторий)
+## 2. Why the original ZOOM IN CAMERA did not work
 
-Два APK, один Gradle-проект:
+Original: [ksuzukigh/rokid-zoom-in-camera](https://github.com/ksuzukigh/rokid-zoom-in-camera)
+v1.2.1 (commit `c72eb42`, MIT).
 
-| Модуль | Приложение | ID |
+Symptoms: zoom visible in preview but files saved at 1×; preview did not come back after a photo;
+video had no preview, only a timer.
+
+**Cause (confirmed):** photos and videos were taken by the glasses' **system camera service**, not the app.
+- The app asks the system to disable the button (broadcast to `com.rokid.os.sprite.assistserver`,
+  keys `settings_interaction_shortPressFun` / `longPressFun` → `none`). **Firmware 1.29 ignores it.**
+- The ring's photo button talks to the system camera directly; the app never sees it.
+- The system camera takes the camera from the app → the preview freezes.
+
+---
+
+## 3. This repository
+
+| Module | App | ID |
 |---|---|---|
-| `app` | **ZOOM Камера RU** 2.0.0-ru | `io.github.ksuzukigh.rokidzoomincamera.ru` (ставится рядом с оригиналом) |
-| `inputtest` | **Тест кнопок и кольца** | `kz.rokid.inputtest` |
+| `app` | **ZOOM Камера RU** 2.7.1-ru | `io.github.ksuzukigh.rokidzoomincamera.ru` (next to the original) |
+| `inputtest` | **Тест кнопок и кольца** 1.4 | `kz.rokid.inputtest` |
 
-### ZOOM Камера RU — изменения
-- Съёмка **тапом по дужке** (фото), **удержанием** (видео старт/стоп) — обход перехвата кнопки.
-- Автопереподключение камеры после перехвата + понятное сообщение на экране.
-- **Программный зум/кадрирование фото**: снимается полный кадр, кроп делает `PhotoProcessor`
-  (BitmapRegionDecoder, EXIF копируется) — файл всегда совпадает с превью.
-- Форматы фото 4:3 / 16:9 / 3:2 / 1:1; разрешение видео и к/с из возможностей камеры.
-- Рамка области кадра (`FrameOverlayView`), зум шагом 0,5× (1–4×), зум колесом/стрелками.
-- Меню по двойному тапу; **размер и высота картинки** настраиваются; подсказки прячутся через 6 с.
-- Русский интерфейс, настройки в SharedPreferences.
-- Файлы: `RokidZoomRu_ГГГГММДД_ЧЧММСС_2.0x_16x9.jpg`, видео `…_1080p30.mp4`.
+Branch `v2.1`, PR #1 into `main` (one commit per version, 2.1.0 … 2.7.1). See CHANGELOG.md.
 
-### Тест кнопок и кольца
-Сверху крупно — что пришло (тап, свайп, колесо, клавиша ОК, клавиша камеры, broadcast кнопки),
-ниже — чек-лист ✓/○ и сырой журнал. Отмечает, когда приложение свернула система (сработала
-системная камера). **Выход — удержание пальца на дужке 3 с** или «Назад». При выходе сохраняет
-отчёт: `DCIM/Camera/InputTest_….png` и `Download/InputTest_….txt`.
-
-### 2.1.0-ru — по итогам первого запуска (25.11.2026)
-Отзыв после запуска 2.0.0: тест непонятен и из него не выйти (жал кнопку → системная камера
-наснимала фото); две одинаковые иконки камер; «перехвачено» пишется слишком низко;
-два файла 1.5× получились случайно (свайп = зум, не было видно); непонятно, как менять размер/качество.
-Сделано: все надписи вверху, крупный зум + шкала + вспышка значения, постоянная подсказка,
-меню списком (+ «Размер фото», «Качество JPEG», «Справка», «Закрыть»), справка на очках,
-новые иконки (лупа / кольцо), понятный выход из теста, отчёт теста в галерею.
-
-### Сборка
-- GitHub Actions (`.github/workflows/android.yml`) — артефакт `rokid-zoom-ru-apk` с обоими APK.
-- Локально: JDK 17 + Android SDK 35, `./gradlew test assembleDebug` (см. README, вариант C).
-- Все сборки подписаны общим ключом `keystore/debug.keystore` (пароль `android`) — версии ставятся
-  друг поверх друга. 2.0.0 была подписана другим ключом → перед 2.1.0 её один раз удалить.
-- APK 2.1.0 собраны в облачной сессии **без Gradle** (dl.google.com там закрыт): javac `--release 8`
-  против android.jar API 32, dx, aapt, apksigner. Поэтому в коде **нет лямбд** — держать так или
-  собирать Gradle-ом. 39 unit-тестов проходят.
-- **На очках 2.1.0 ещё не запускалась.**
-
-Ключевые файлы: `MainActivity.java` (камера, жесты, меню, справка), `PhotoProcessor.java`
-(кроп + уменьшение + качество), `PhotoCrop.java`, `CaptureOptions.java` (пункты меню),
-`FrameOverlayView.java`, `TouchGesture.java`, `inputtest/.../MainActivity.java`.
-
-### 2.2.0-ru — по итогам второго запуска (25.11.2026)
-Отзыв на 2.1: двойной тап на очках = системный выход, приложение его не получает; зум «пляшет»
-(и свайп, и колесо), 4× не зафиксировать; не все кнопки кольца/дужки видны в тесте; без кольца
-заходить в приложения тяжело. Версия: двойной тап нигде не используется; меню по удержанию 1 с
-(видео/настройки/справка/выход); `InputArbiter` — 1 жест = 1 шаг, клавиши во время касания
-игнорируются, пауза 280 мс между шагами; зум 1/1.5/2/3/4; «Свайп зума: обратный».
-Тест 1.2: «Назад» записывается, а не выходит; проверка «касание + клавиша».
-Гипотеза про «пляску»: система дублирует свайп по дужке клавишей DPAD (возможно с другим знаком). Подтвердить тестом 1.2.
-
-### Что реально приходит в приложения (отчёты теста 1.1, 25.11.2026)
-| Источник (InputDevice) | Сигналы |
+### Input facts (input tests 1.1 / 1.3)
+| Source (InputDevice) | Signals |
 |---|---|
-| Дужка `ROKID,PSOC-TP-R` | KEY ENTER (тап), KEY NOTIFICATION(83) sc=204, KEY BACK(4) sc=158. **TOUCH-событий нет.** |
-| Кольцо `RGR06 Keyboard` | стрелки (колесо), ENTER, NOTIFICATION(83) sc=59, BACK(4) sc=158 |
-| Кнопка очков | broadcast `ACTION_SPRITE_BUTTON_*` (+ системная камера) |
-Дмитрий: дужка и тачпад кольца шлют одинаковые сигналы; различить можно только по устройству.
-Мастер теста 1.3 (3 прогона, строки частично сдвинуты из-за автоперехода по времени):
-- перед любым жестом приходит NOTIFICATION (дужка sc=204, кольцо sc=59);
-- тап по дужке = ENTER; двойной тап = ENTER×2 или BACK;
-- свайп вперёд = DPAD_RIGHT + DPAD_DOWN, свайп назад = DPAD_LEFT + DPAD_UP; колесо кольца — так же, несколько событий за поворот;
-- удержание на дужке = только NOTIFICATION;
-- нажатие колеса кольца = MEDIA_PLAY_PAUSE + ENTER;
-- кнопка очков / камеры кольца = broadcast BTN_DOWN/BTN_UP и системная камера.
-- Дмитрий: на кольце две кнопки «как у мыши»: **левая** (и кнопка на очках) — системная камера;
-  **правая** и тап по дужке — фото с зумом в нашем приложении.
-- 2.3.1 на очках: зум работает; вход в настройки был неочевиден; 16:9 «не применилось» — вероятно
-  спутал с разрешением видео; в 2.3.2 формат фото всегда виден на экране.
-Вывод: всё управление строить на клавишах (ENTER / BACK / DPAD), касания не использовать.
+| Temple `ROKID,PSOC-TP-R` | KEY ENTER (tap), NOTIFICATION(83) sc=204, BACK(4). **No touch events.** |
+| Ring `RGR06 Keyboard` | arrows (wheel), ENTER, NOTIFICATION(83) sc=59, BACK(4), MEDIA_PLAY_PAUSE |
+| Glasses button | broadcast `ACTION_SPRITE_BUTTON_*` + system camera |
 
-## 4. Открытые проверки (следующий шаг)
+- Every gesture is preceded by NOTIFICATION.
+- Tap = ENTER; double tap = ENTER×2 or BACK (system exit, never use it).
+- Swipe forward = DPAD_RIGHT + DPAD_DOWN, back = DPAD_LEFT + DPAD_UP; the wheel sends the same in bursts.
+- Hold on the temple = NOTIFICATION only (inconvenient, the owner does not want it).
+- Wheel press = MEDIA_PLAY_PAUSE + ENTER. It can also reach the phone's media player over Bluetooth.
+- Ring has two mouse-like buttons: **left** = system camera (like the glasses button), **right** = ENTER.
+- Temple and ring send the same codes; only the device name differs.
+- The owner prefers the ring over temple gestures.
 
-1. Поставить 2.3.1-ru и Тест 1.4 поверх (тот же ключ). 2.2 не ставить.
-2. **Тест кнопок и кольца** (по одному действию, кнопку/кольцо — по 1 нажатию): тап, 2× тап,
-   удержание, свайпы, колесо и кнопка кольца, кнопка очков. Выйти удержанием 3 с,
-   прислать картинку `InputTest_….png`. Вопросы:
-   - доходит ли колесо кольца до приложений (KEY / GEN) или только до системы;
-   - приходит ли тап как `TOUCH` или как `KEY ENTER/DPAD_CENTER`;
-   - какая сторона свайпа «вперёд» (X+ или X−) — чтобы зум шёл в нужную сторону.
-3. **Видео** (ещё не проверялось): запись через меню, зум свайпом во время записи — попадает ли в файл; разные разрешения/к/с.
-3a. **ZOOM Камера RU**: видно ли надписи вверху; зум свайпом; фото на 4× и 16:9 → имя `RokidZoomRu_…_4.0x_16x9.jpg`;
-   «Размер фото» и «Качество JPEG» в меню; видео удержанием.
-4. Подобрать «Размер/Высоту картинки».
-5. Выключить автообновление прошивки.
+### Camera controls (2.5.0+)
+Wheel press = photo / OK / stop recording; wheel turn = zoom (0.1× steps) / select; right ring
+button = menu and settings, back in menus; temple tap = photo / OK fallback; Back = menu, Back in
+the menu = exit.
+
+### Key design points
+- Photo: full sensor frame captured, zoom + crop in software (`PhotoProcessor`, `PhotoCrop`);
+  aspects are width/height as viewed, EXIF rotation respected.
+- Video: native path = MediaRecorder surface + orientation hint. Other shapes = `VideoGlRenderer`
+  (camera → SurfaceTexture → GLES2 → recorder surface). On RV101 the SurfaceTexture matrix already
+  contains the 90° turn; `VideoGeometry.residualRotation` adds a turn only when it does not.
+- `InputArbiter` dedupes key pairs (280 ms in menus, 90 ms for zoom).
+- An active `MediaSession` swallows media keys while the camera is open.
+- `CrashLog` writes the trace on crash and copies it to Download on the next start.
+
+### Build
+- GitHub Actions (`.github/workflows/android.yml`) → artifact `rokid-zoom-ru-apk` with both APKs.
+- Local: JDK 17 + Android SDK 35, `./gradlew test assembleDebug`.
+- Shared signing key `keystore/debug.keystore` (password `android`).
+- Cloud sessions cannot reach dl.google.com, so APKs are built without Gradle: aapt → javac
+  `--release 8` against android.jar (API 32) → dx → zipalign → apksigner. **No lambdas** in code.
+- Unit tests: 58 (pure-Java classes).
+
+Key files: `MainActivity.java` (camera, input, menus, help), `PhotoProcessor.java`, `PhotoCrop.java`,
+`CaptureOptions.java` (settings model), `VideoGeometry.java`, `VideoGlRenderer.java`,
+`FrameOverlayView.java`, `InputArbiter.java`, `MediaLabels.java`, `CrashLog.java`,
+`inputtest/.../MainActivity.java`.
+
+## 4. Open checks
+
+1. Camera 2.7.1: 16:9 and other video shapes must not be rotated in the saved file; zoom while recording.
+2. Whether the wheel press still starts the phone's audiobook (if yes, the ring is likely paired to the phone directly).
+3. Any crash report from `Download/ZoomCamera_crash_*.txt`.
+4. Turn off firmware auto-update.
 
 ---
 
-## 5. План доработок (бэклог)
+## 5. Backlog
 
-Порядок, согласованный в обсуждении: камера → переводчик → навигация → HUD для PFD.
-Ассистент и суфлёр — параллельно, по результатам тестов.
+Agreed order: camera → translator → navigation → HUD for the PFD. Assistant and teleprompter in parallel.
 
-### 5.1 Переводчик (текст с камеры + живая речь)
-- **Без AR-наложения** (дисплей мал, камера не на оси глаза) → **текстом**.
-- Камера: режим «под прицелом» (перевод надписи под крестиком, обновление ~2 раза/с)
-  и «стоп-кадр» (список «оригинал → перевод», листание свайпом/колесом), зум.
-- Речь — претензии к штатному: текст уезжает, кольцом можно вернуть, но при новом слове
-  всё улетает; «гонит», вероятно из-за посторонних звуков. Решения:
-  - перемотка не сбрасывается новым текстом (значок «↓ новое»);
-  - режим «слушать, пока держу палец», шумоподавление, VAD, сильный ASR;
-  - перевод ИИ напрямую zh→ru с контекстом; ответ собеседнику голосом/на экране телефона.
-- Бэкенды: офлайн ML Kit (OCR zh v2 + перевод zh↔ru); онлайн Claude/DeepSeek/Gemini.
-  **В Китае** Google/Claude/Gemini заблокированы → офлайн-модели скачать заранее;
-  онлайн — DeepSeek/Qwen, ASR — Alibaba/iFlytek.
+### 5.1 Translator (camera text + live speech)
+- **No AR overlay** (small display, camera off the eye axis) → **text**.
+- Camera: "under the crosshair" mode (~2 updates/s) and "freeze frame" (list original → translation, scroll with the wheel), zoom.
+- Speech, issues with the stock app: text scrolls away, new words reset scrolling, noise. Fixes:
+  scrolling not reset by new text, push-to-talk, noise suppression, VAD, strong ASR,
+  AI translation zh→ru with context, reply by voice / on the phone.
+- Backends: offline ML Kit (OCR zh v2 + zh↔ru); online Claude/DeepSeek/Gemini.
+  **In China** Google/Claude/Gemini are blocked → download offline models in advance; online DeepSeek/Qwen, ASR Alibaba/iFlytek.
 
-### 5.2 Ассистент Claude на очках
-- Встроенного Claude нет. Варианты: агент AIUI Studio (JS), своё приложение на очках
-  (речь → Claude API → HUD), мост через телефон (CXR SDK).
-- Запуск тапом (wake-фраза «Hi Rokid» плохо распознаёт акцент), «что я вижу» с камеры, русский.
-- Нужен отдельный ключ Claude API (подписка claude.ai не подходит).
-- Мост к Claude Code (одобрения/статус агентов на очках): основа — claude-bridge-glasses,
-  Rokid_Claude, rokid-glasses-bots.
+### 5.2 Claude assistant on the glasses
+- No built-in Claude. Options: AIUI Studio agent (JS), own app (speech → Claude API → HUD), phone bridge (CXR SDK).
+- Start by tap (the "Hi Rokid" wake phrase handles accents poorly), "what do I see" from the camera, Russian.
+- Needs a separate Claude API key (a claude.ai subscription does not work).
+- Bridge to Claude Code (approvals / agent status on the glasses): claude-bridge-glasses, Rokid_Claude, rokid-glasses-bots.
 
-### 5.3 Суфлёр с построчной прокруткой
-- Штатный суфлёр листает только страницами, системный — не изменить.
-- Своё приложение: колесо кольца = строка. **Зависит от теста кольца** (какие события приходят).
-- Текст удобно отправлять с компьютера по Wi-Fi.
+### 5.3 Teleprompter with line-by-line scrolling
+- The stock teleprompter pages only. Own app: one wheel click = one line. Send text from the computer over Wi-Fi.
 
-### 5.4 Навигация
-| Источник | Актау | Калининград | Китай | Подключение |
+### 5.4 Navigation
+| Source | Aktau | Kaliningrad | China | Access |
 |---|---|---|---|---|
-| OpenStreetMap (OSRM, офлайн) | средне | хорошо | крупные города, офлайн | бесплатно |
-| Google (Routes/Places) | хорошо | хорошо | заблокирован | ключ API, квота |
-| 2ГИС Mobile SDK | отлично | отлично | нет | ключ по заявке |
-| Яндекс MapKit/NaviKit | хорошо | отлично | нет | навигация от ~$4800/мес |
-| Amap (高德) | нет | нет | лучший | нужен китайский аккаунт разработчика |
+| OpenStreetMap (OSRM, offline) | fair | good | big cities, offline | free |
+| Google (Routes/Places) | good | good | blocked | API key, quota |
+| 2GIS Mobile SDK | excellent | excellent | no | key on request |
+| Yandex MapKit/NaviKit | good | excellent | no | navigation from ~$4800/month |
+| Amap | no | no | best | Chinese developer account |
 
-Готовое: **Rokid-GMaps** (OSM + опционально Google), **Rokid-Maps** — можно пробовать в Актау сразу.
-План: основа Rokid-GMaps, опционально 2ГИС; для Китая — офлайн OSM.
+Ready-made: **Rokid-GMaps** (OSM + optional Google), **Rokid-Maps**. Plan: base on Rokid-GMaps, optional 2GIS; offline OSM for China.
 
-### 5.5 HUD для PFD (связь с проектом pfd_dev)
-- Очки как нашлемный дисплей: скорость, высота, курс, вариометр, крен/тангаж, следующая точка.
-- Протокол **GDL90** по Wi-Fi/UDP (стандарт EFB: ForeFlight, SkyDemon, EasyVFR).
-- Обязателен watchdog: «НЕТ ДАННЫХ» при потере потока.
-- Навигация считается на Pi (OpenAIP: аэродромы, зоны), на очки — готовые цифры.
-- Отладка без PFD: X-Plane → мост → GDL90 → очки.
-- Только для проверки функциональности, штатные приборы — основные.
+### 5.5 HUD for the PFD (pfd_dev project)
+- Glasses as a head-up display: speed, altitude, heading, vario, roll/pitch, next waypoint.
+- **GDL90** over Wi-Fi/UDP (EFB standard: ForeFlight, SkyDemon, EasyVFR). Watchdog: "НЕТ ДАННЫХ" when the stream stops.
+- Navigation computed on the Pi (OpenAIP), the glasses get ready numbers. Debug without the PFD: X-Plane → bridge → GDL90 → glasses.
+- For functional checks only; the certified instruments stay primary.
+- Hardware: CM5 4 GB / 32 GB eMMC, no Wi-Fi; carrier Waveshare CM5-IO-BASE-B. Link to the glasses:
+  **ESP32-S3 (Seeed XIAO ESP32S3)** on UART from the STM32 → Wi-Fi AP → GDL90 (2 pcs ordered, delivery Dec 13–19).
+  Optional Wi-Fi CM5 (CM5104032) + antenna kit; bench: Pi 5 with Wi-Fi.
 
-Железо:
-- Текущий CM5: 4 ГБ / 32 ГБ eMMC, **без Wi-Fi**.
-- Carrier: **Waveshare CM5-IO-BASE-B** (BOX-B): M.2 только M-key (NVMe), 2× USB 3.0,
-  Gigabit Ethernet, 40-pin GPIO; в корпусе есть отверстие/заглушка под антенну.
-- Канал на очки: **ESP32-S3 (Seeed XIAO ESP32S3)** по UART от STM32 → Wi-Fi AP → GDL90.
-  Заказано на AliExpress (EC-Buying), 2 шт. + штырьки, доставка 13–19 декабря.
-  Плюс: независим от Pi, старт ~1 с. На борту питание и UART — пайкой, USB-C только для стенда,
-  U.FL антенны зафиксировать клеем.
-- Опционально Wi-Fi на Pi: CM5 **CM5104032** (4 ГБ/32 ГБ/Wi-Fi) + антенный кит CM4/CM5.
-  Стенд: Pi 5 со встроенным Wi-Fi.
-
-### 5.6 Связь очков с компьютером напрямую (без телефона)
-- Телефон нужен один раз: режим разработчика + Wi-Fi.
-- USB ADB (5-пиновый кабель) или ADB по Wi-Fi; **scrcpy** — экран очков на ноутбуке,
-  мышь и клавиатура; `adb install`, `adb logcat`, `adb pull`.
-- Ubuntu на ноутбуке: `sudo apt install adb`; Claude Code в папке проекта может сам
-  собирать, ставить и читать логи.
+### 5.6 Glasses ↔ computer without the phone
+- Phone needed once: developer mode + Wi-Fi. Then USB ADB (5-pin cable) or ADB over Wi-Fi;
+  **scrcpy** for the screen, `adb install`, `adb logcat`, `adb pull`. Ubuntu: `sudo apt install adb`.
 
 ---
 
-## 6. Полезные ресурсы
+## 6. Resources
 
-- Каталог проектов: [awesome-rokid](https://github.com/Anezium/awesome-rokid)
-- Установщик APK: [Rokid-APKs](https://github.com/Anezium/Rokid-APKs)
-- Документация YodaOS (неофициальная): [rokid-docs](https://github.com/buildwithfenna/rokid-docs)
-- Камеры: [ZOOM IN CAMERA](https://github.com/ksuzukigh/rokid-zoom-in-camera),
-  [Warlock Camera](https://github.com/Warlock94/WarlockCamera)
-- Кольцо R08 → стрелки: [R08-Access-Bridge](https://github.com/Anezium/R08-Access-Bridge)
-- Уведомления: [Rokid Relay](https://github.com/Anezium/Rokid-Relay); магазин: [RokidBrew](https://github.com/Anezium/RokidBrew)
-- Навигация: [Rokid-GMaps](https://github.com/Anezium/Rokid-GMaps), [Rokid-Maps](https://github.com/chartmann1590/Rokid-Maps)
+- Project list: [awesome-rokid](https://github.com/Anezium/awesome-rokid)
+- APK installer: [Rokid-APKs](https://github.com/Anezium/Rokid-APKs)
+- YodaOS docs (unofficial): [rokid-docs](https://github.com/buildwithfenna/rokid-docs)
+- Cameras: [ZOOM IN CAMERA](https://github.com/ksuzukigh/rokid-zoom-in-camera), [Warlock Camera](https://github.com/Warlock94/WarlockCamera)
+- Ring R08 → arrows: [R08-Access-Bridge](https://github.com/Anezium/R08-Access-Bridge)
+- Notifications: [Rokid Relay](https://github.com/Anezium/Rokid-Relay); store: [RokidBrew](https://github.com/Anezium/RokidBrew)
+- Navigation: [Rokid-GMaps](https://github.com/Anezium/Rokid-GMaps), [Rokid-Maps](https://github.com/chartmann1590/Rokid-Maps)
 - Claude: [claude-bridge-glasses](https://github.com/markossssssss/claude-bridge-glasses),
   [Rokid_Claude](https://github.com/williamlzz/Rokid_Claude), [rokid-glasses-bots](https://github.com/flaibot/rokid-glasses-bots)
-- Mac-управление: [rokid-mac-control](https://github.com/ksuzukigh/rokid-mac-control)
+- Mac control: [rokid-mac-control](https://github.com/ksuzukigh/rokid-mac-control)
 
-## 7. Известные ограничения
+## 7. Known limits
 
-- Батарея: при активном ИИ/видео < 2 ч.
-- В темноте камера слабая.
-- Каждое обновление прошивки может ломать сторонние приложения — проверять после обновления.
-- Пересобранные APK подписаны debug-ключом; оригинал не трогаем (другой ID).
+- Battery: under 2 h with AI/video active. Weak camera in the dark.
+- Each firmware update can break third-party apps; re-check after updating.
+- Rebuilt APKs are signed with the debug key; the original app is untouched (different ID).

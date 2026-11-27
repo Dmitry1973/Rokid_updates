@@ -1,141 +1,138 @@
-# Изменения
+# Changelog
 
 ## 2.7.1-ru (2026-11-27)
-- Видео 16:9 и другие не родные форматы сохранялись повёрнутыми на 90°: камера RV101
-  уже сама поворачивает картинку в SurfaceTexture (поворот лежит в её матрице), а 2.7.0
-  поворачивала второй раз. Теперь поворот берётся из матрицы на первом кадре, свой
-  добавляется только если камера его не сделала.
+- Fixed: 16:9 and other non-native video shapes were saved rotated by 90°. The RV101 camera
+  already turns the SurfaceTexture picture upright (the turn is in its transform matrix) and
+  2.7.0 turned it a second time. The turn is now read from the matrix on the first frame and
+  added only if the camera did not do it (`VideoGeometry.residualRotation`, unit-tested for
+  every shape and size).
 
 ## 2.7.0-ru (2026-11-27)
-- Новый пункт «Формат ВИДЕО»: родной (как у камеры, у RV101 9:16 верт.), 16:9 гориз.,
-  9:16 верт., 4:3 гориз., 3:4 верт., 1:1. По умолчанию 16:9 гориз.
-- Не родные форматы пишутся через OpenGL: кадр камеры поворачивается, обрезается
-  до формата и кодируется (VideoGlRenderer, геометрия в VideoGeometry). Поток камеры
-  выбирается так, чтобы хватило на длинную сторону из «Разрешение ВИДЕО».
-  Если такой формат не запустился, запись сама повторяется в родном формате.
-- Видоискатель при записи показывает рамку именно выбранного формата видео;
-  в настройках на пунктах видео тоже видна рамка видео. Строка «Видео получится: Ш×В».
-- На экране: «ВИДЕО 16:9 1072p30» вместо голого разрешения; формат в имени файла.
+- New setting «Формат ВИДЕО» (video format): native (as the camera gives it, 9:16 portrait on
+  RV101), 16:9, 9:16, 4:3, 3:4, 1:1. Default 16:9 landscape.
+- Non-native shapes are recorded through OpenGL: the camera frame is turned, cropped and encoded
+  (`VideoGlRenderer`, geometry in `VideoGeometry`). The camera stream is picked so it covers the
+  long side chosen in «Разрешение ВИДЕО». If a shape fails, recording retries in native format.
+- The viewfinder shows the chosen video frame while recording, and while a video item is
+  selected in settings. Menu line «Видео получится: W×H».
+- HUD shows `ВИДЕО 16:9 1072p30` instead of a bare resolution; the format is in the file name.
 
 ## 2.6.0-ru (2026-11-25)
-- Форматы фото с ориентацией: весь кадр, 16:9 и 9:16, 4:3 и 3:4, 3:2 и 2:3, 1:1.
-  16:9 всегда горизонтальный, 9:16 всегда вертикальный (учитывается поворот кадра из EXIF),
-  рамка на превью рисуется так же. Старый выбор формата сброшен на «весь кадр».
-- Плавный зум: шаг 0.1× за щелчок колеса/свайп (настройка «Шаг зума»: 0.1 / 0.2 / 0.5),
-  в том числе во время записи видео. Шкала зума из 12 делений.
-- Нажатие колеса больше не должно уходить в плеер телефона: пока камера открыта,
-  приложение держит активную медиасессию и забирает кнопки медиа себе.
-- Вылеты: отчёт о сбое сохраняется и при следующем запуске копируется в
-  Download/ZoomCamera_crash_*.txt, на экране пишется «Прошлый запуск: сбой».
-  Ошибки памяти при сохранении фото больше не роняют приложение.
-- Картинка по умолчанию 90 % и поднята на 5 %: нижний край выше, верх на месте.
-- Новая иконка: фотоаппарат с зелёным объективом и значком «+».
+- Photo formats with orientation: full frame, 16:9 / 9:16, 4:3 / 3:4, 3:2 / 2:3, 1:1. 16:9 is
+  always landscape, 9:16 always portrait (EXIF rotation is respected); the viewfinder frame
+  matches. The old format choice resets to full frame.
+- Smooth zoom: 0.1× per wheel click or swipe (setting «Шаг зума»: 0.1 / 0.2 / 0.5), also while
+  recording. 12-cell zoom bar.
+- Wheel press should no longer reach the phone's player: while the camera is open the app holds
+  an active media session that takes the media keys.
+- Crashes: the stack trace is kept and copied on the next start to
+  `Download/ZoomCamera_crash_*.txt`; the HUD says «Прошлый запуск: сбой». Out-of-memory while
+  saving a photo no longer crashes the app.
+- Default viewfinder 90 % and lifted 5 %: the bottom edge moves up, the top stays.
+- New icon: a camera with a green lens and a "+" badge.
 
 ## 2.5.0-ru (2026-11-25)
-- Кольцо как мышь, без дублей: нажать колесо = фото / ОК в меню / стоп записи;
-  правая кнопка кольца = меню и настройки, в меню = назад; крутить колесо = зум / выбор.
-- Тап по дужке остался запасным вариантом без кольца (фото / ОК), «Назад» = меню.
-- Кольцо отличается от дужки по имени устройства (RGR…); голый ENTER от кольца
-  ждёт 150 мс, чтобы не спутать его с нажатием колеса (PLAY_PAUSE + ENTER).
+- Ring works like a mouse, no duplicates: wheel press = photo / OK in menus / stop recording;
+  right ring button = menu and settings, back inside menus; wheel turn = zoom / select.
+- Temple tap stays as the no-ring fallback (photo / OK); Back = menu.
+- Ring and temple are told apart by device name (`RGR…`); a bare ENTER from the ring waits
+  150 ms so it is not confused with a wheel press (PLAY_PAUSE + ENTER).
 
 ## 2.4.3-ru (2026-11-25)
-- Все подсказки на экране и справка теперь названиями жестов, а не клавиш:
-  «правая кнопка кольца / тап по дужке» = фото, «нажать на колесо» = меню/ОК,
-  «крутить колесо / свайп по дужке» = зум и выбор.
-- Нажатие на колесо открывает меню и не делает фото (сопутствующий ENTER гасится 500 мс).
+- On-screen hints and help use gesture names instead of key names.
+- Wheel press opens the menu without taking a photo (the accompanying ENTER is ignored for 500 ms).
 
 ## 2.4.2-ru (2026-11-25)
-- меню — нажатием колеса кольца (MEDIA_PLAY_PAUSE; ENTER, который приходит вместе с ним, гасится); в меню нажатие колеса = ОК;
-- открытие меню удержанием пальца на дужке убрано (неудобно и ненадёжно); «Назад» остаётся запасным способом.
+- Menu opens with a ring wheel press (MEDIA_PLAY_PAUSE; the ENTER that comes with it is ignored);
+  inside menus a wheel press = OK.
+- Opening the menu by holding a finger on the temple was removed (inconvenient, unreliable);
+  Back remains the fallback.
 
 ## 2.4.1-ru (2026-11-25)
-- превью принимает форму выбранного формата: всё, что не попадёт в фото (или в видео во время записи), затемнено;
-- уголки видео-рамки показываются только во время записи.
+- The viewfinder takes the shape of the chosen format: everything outside the photo (or the video
+  while recording) is dimmed.
+- Video frame corners are shown only while recording.
 
 ## 2.4.0-ru (2026-11-25)
-- справа вверху: «ФОТО 16:9 · 9.1 МП», «ВИДЕО 1080p30» и «посл.: …» — параметры последнего файла (МП и размер / разрешение, к/с, размер, длительность);
-- во время записи: «REC 1080p30 · 45 МБ», размер растёт;
-- короткие подписи разрешений: 4K, 8K, 1080p, 720p; фото — в мегапикселях (`MediaLabels`).
+- Top right: «ФОТО 16:9 · 9.1 МП», «ВИДЕО 1080p30» and the last file (MP and size / resolution,
+  fps, size, duration).
+- While recording: «REC 1080p30 · 45 МБ», the size grows.
+- Short resolution labels: 4K, 8K, 1080p, 720p; photos in megapixels (`MediaLabels`).
 
 ## 2.3.3-ru (2026-11-25)
-- зум во время записи видео: свайп по дужке или колесо (цифровой кроп камеры идёт и в файл);
-- тест: все форматы фото (4:3, 16:9, 3:2, 1:1) на всех ступенях зума сохраняют пропорции и центр.
+- Zoom while recording video: temple swipe or wheel (the camera's digital crop goes into the file).
+- Test: every photo format at every zoom step keeps its proportions and centre.
 
 ## 2.3.2-ru (2026-11-25)
-- меню открывается ещё и удержанием пальца на дужке ~1 с (приходит как NOTIFICATION без клавиши после);
-- «Настройки фото и видео» — первый пункт меню;
-- справа вверху всегда видно «ФОТО 16:9 · 4032×2268» — текущий формат и размер следующего фото;
-- пункты настроек подписаны «Формат ФОТО» / «Разрешение ВИДЕО», чтобы не путать (16:9 видео ≠ 16:9 фото).
+- Menu also opens by holding a finger on the temple ~1 s (arrives as NOTIFICATION with no key after it).
+- «Настройки фото и видео» is the first menu item.
+- Top right always shows «ФОТО 16:9 · 4032×2268»: the current format and the next photo size.
+- Settings items are named «Формат ФОТО» / «Разрешение ВИДЕО» so photo 16:9 is not confused with video.
 
-## 2.3.1-ru / Тест 1.4 (2026-11-25) — по отчётам мастера 1.3
+## 2.3.1-ru / Input test 1.4 (2026-11-25), from the 1.3 wizard reports
+Found the cause of the zoom "dance": one swipe (and one wheel step) sends TWO keys, forward
+DPAD_RIGHT + DPAD_DOWN, back DPAD_LEFT + DPAD_UP. The camera treated DOWN as back and UP as
+forward, so each swipe cancelled itself. Now RIGHT/DOWN = +1, LEFT/UP = −1, with duplicate
+filtering. Temple swipe works again for zoom and menus. MEDIA_PLAY_PAUSE (wheel press) is ignored,
+ENTER replaces it. «Свайп зума: обратный» now also applies to the wheel.
 
-Найдена причина «пляски» зума: один свайп (и один шаг колеса) шлёт ДВЕ клавиши —
-вперёд DPAD_RIGHT + DPAD_DOWN, назад DPAD_LEFT + DPAD_UP. Камера считала DOWN «назад» и UP «вперёд»,
-и каждый свайп гасил сам себя. Теперь RIGHT/DOWN = +1, LEFT/UP = −1, плюс отсев дублей.
-Свайп по дужке снова работает для зума и меню. MEDIA_PLAY_PAUSE (нажатие колеса) игнорируется — ENTER его заменяет.
-Настройка «Свайп зума: обратный» теперь действует и на колесо.
+Test 1.4: a step advances only after a signal (or after 20 s with none); while the system camera
+is open the step waits and gives 3 s after returning.
 
-Тест 1.4: шаг переключается только после сигнала (или через 20 с без сигнала); пока открыта
-системная камера, шаг стоит и после возврата даёт 3 с.
+## 2.3.0-ru / Input test 1.3 (2026-11-25), from the 1.1 test reports
+The reports showed: the temple (ROKID,PSOC-TP-R) sends no touch events to apps, only keys
+(ENTER, NOTIFICATION sc=204, BACK); the ring (RGR06 Keyboard) sends arrows, ENTER,
+NOTIFICATION sc=59, BACK. Temple and ring send the same codes and differ only by device.
 
-## 2.3.0-ru / Тест 1.3 (2026-11-25) — по отчётам теста 1.1
+Camera:
+- Menu on Back (touch hold never arrives); Back inside the menu leaves the app.
+- Photo = OK / tap, zoom = wheel (arrows) through `InputArbiter`.
 
-Отчёты показали: дужка (ROKID,PSOC-TP-R) не шлёт приложениям касаний, только клавиши
-(ENTER, NOTIFICATION sc=204, BACK); кольцо (RGR06 Keyboard) — стрелки, ENTER, NOTIFICATION sc=59, BACK.
-Сигналы дужки и кольца одинаковые, различаются только устройством.
+Test 1.3: a step-by-step wizard "do the gesture → signal recorded", table tagged by source
+(`/д` temple, `/к` ring), steps advance on time, exit with Back ×3.
 
-ZOOM Камера RU:
-- меню по «Назад» (удержание касанием не доходит); «Назад» в меню — выход из приложения;
-- фото — ОК/тап, зум — колесо (стрелки) через `InputArbiter`.
+Versions 2.2 / test 1.2 were never installed on the glasses (menu and exit relied on touch hold).
 
-Тест 1.3: пошаговый мастер «сделайте жест → записываю сигнал», таблица с пометкой источника
-(`/д` дужка, `/к` кольцо), шаги идут по времени (касания не нужны), выход «Назад» ×3.
+## 2.2.0-ru / Input test 1.2 (2026-11-25), second run on the glasses
+Camera:
+- Double tap removed entirely (the system takes it); menu on a 1 s hold: video, settings, help, exit.
+- Zoom: one swipe or one wheel click = exactly one step; duplicates (touch + system arrow) and
+  wheel bounce are filtered (`InputArbiter`).
+- Zoom steps 1× / 1.5× / 2× / 3× / 4×.
+- Setting «Свайп зума: обычный / обратный»; leaving settings by hold.
 
-Версия 2.2 / тест 1.2 на очки не ставились (меню и выход были по удержанию касанием).
+Input test:
+- Back is recorded instead of exiting (shows whether the system sends Back on double tap).
+- New check "swipe = touch + key": shows whether the system duplicates a swipe with an arrow key.
 
-## 2.2.0-ru / Тест 1.2 (2026-11-25) — второй запуск на очках
+## 2.1.0-ru / Input test 1.1 (2026-11-25), after the first run on the glasses
+Camera:
+- All text (zoom, hint, status, menu) moved to the top of the screen and no longer moves with the picture.
+- Large zoom readout «ЗУМ 1.5×» + bar; on change the value flashes in the centre for a second.
+- Permanent hint line; the settings menu shows the whole list; new items: photo size, JPEG
+  quality, help, close menu; «Фото получится: W×H» line.
+- On-glasses help (first start and from the menu).
+- Clear message when the system camera took the button or ring.
+- New icon (magnifier), not confused with cameras.
 
-ZOOM Камера RU:
-- двойной тап убран совсем (его забирает система); меню по удержанию 1 с: видео, настройки, справка, выход;
-- зум: 1 свайп или 1 щелчок колеса = ровно 1 шаг; дубли (касание + системная стрелка) и дребезг колеса отсекаются (`InputArbiter`);
-- ступени зума 1× / 1.5× / 2× / 3× / 4×;
-- настройка «Свайп зума: обычный / обратный»; выход из настроек — удержание.
+Input test:
+- Exit by holding a finger on the temple 3 s (with countdown) or Back.
+- What arrived is shown large at the top, a checklist below.
+- Shows when the system camera intercepted the button.
+- Report on exit: image in DCIM/Camera and text in Download.
+- New icon (ring).
 
-Тест кнопок и кольца:
-- «Назад» не выходит, а записывается (видно, шлёт ли система «Назад» на двойной тап);
-- новая проверка «Свайп = касание + клавиша» — видно, дублирует ли система свайп стрелкой.
-
-## 2.1.0-ru / Тест 1.1 (2026-11-25) — по итогам первого запуска на очках
-
-ZOOM Камера RU:
-- все надписи (зум, подсказка, статус, меню) перенесены в верхнюю часть экрана и не двигаются вместе с картинкой;
-- зум крупно: «ЗУМ 1.5×» + шкала ■■□□□□□, при изменении значение на секунду в центре;
-- постоянная строка-подсказка «тап: фото · держать: видео · свайп: зум · 2× тап: меню»;
-- меню настроек показывает весь список сразу; новые пункты: «Размер фото», «Качество JPEG», «Справка», «Закрыть меню»;
-- строка «Фото получится: Ш×В» в меню;
-- справка по управлению на очках (при первом запуске и из меню);
-- понятное сообщение, когда кнопку/кольцо забрала системная камера;
-- новая иконка (лупа), не путается с камерами.
-
-Тест кнопок и кольца:
-- выход удержанием пальца на дужке 3 с (с обратным отсчётом) или «Назад»;
-- сверху крупно — что пришло, ниже — список проверок с ✓;
-- видно, когда системная камера перехватила кнопку;
-- отчёт при выходе: картинка в DCIM/Camera и текст в Download;
-- новая иконка (кольцо), не камера.
-
-Сборка: общий debug-ключ `keystore/debug.keystore`; код без лямбд (собирается и Gradle, и голым javac + dx).
+Build: shared debug key `keystore/debug.keystore`; lambda-free code (builds with Gradle and with plain javac + dx).
 
 ## 2.0.0-ru (2026-11-24)
-
-Форк Rokid ZOOM IN CAMERA 1.2.1:
-- съёмка тапом и удержанием на дужке (обход перехвата кнопки системной камерой);
-- автопереподключение камеры после перехвата;
-- программный зум и кадрирование фото: файл всегда совпадает с превью;
-- форматы фото 4:3, 16:9, 3:2, 1:1;
-- выбор разрешения видео и частоты кадров;
-- рамка области кадра на экране;
-- шаг зума 0,5×; зум колесом / кнопками вверх-вниз;
-- меню настроек по двойному тапу, настройки сохраняются;
-- русский интерфейс;
-- тестовое приложение «Тест кнопок и кольца».
+Fork of Rokid ZOOM IN CAMERA 1.2.1:
+- Shooting by tap and hold on the temple (works around the system camera taking the button).
+- Camera auto-reconnect after interception.
+- Software zoom and photo crop: the file always matches the preview.
+- Photo formats 4:3, 16:9, 3:2, 1:1.
+- Video resolution and frame rate choice.
+- Frame overlay on screen.
+- 0.5× zoom steps; zoom with the wheel / up-down keys.
+- Settings menu on double tap, settings are saved.
+- Russian interface.
+- Test app «Тест кнопок и кольца».
