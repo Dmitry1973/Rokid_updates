@@ -202,11 +202,10 @@ final class VideoGlRenderer {
                 // (its transform matrix holds the 90-degree turn; 2.7.0 turned it a
                 // second time, so the file came out sideways). Turn here only what the
                 // matrix does not.
-                boolean matrixTurns = Math.abs(stMatrix[0]) < 0.5f && Math.abs(stMatrix[5]) < 0.5f;
-                int residual = matrixTurns ? 0 : rotation;
+                int residual = VideoGeometry.residualRotation(stMatrix, rotation);
                 texCoords = floats(VideoGeometry.texCoords(residual, aspect, uprightWidth, uprightHeight));
                 Log.i(TAG, "VideoGl matrix " + java.util.Arrays.toString(stMatrix) +
-                        " turns=" + matrixTurns + " residual=" + residual);
+                        " residual=" + residual);
             }
             GLES20.glViewport(0, 0, outWidth, outHeight);
             GLES20.glClearColor(0f, 0f, 0f, 1f);

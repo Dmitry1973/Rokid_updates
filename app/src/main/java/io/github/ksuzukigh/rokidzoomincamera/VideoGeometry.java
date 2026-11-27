@@ -105,4 +105,13 @@ final class VideoGeometry {
         }
         return out;
     }
+
+    /**
+     * Turn still needed after the SurfaceTexture matrix. If the camera already
+     * turned the picture (the matrix swaps s and t), nothing is left to do.
+     */
+    static int residualRotation(float[] stMatrix, int rotation) {
+        boolean matrixTurns = Math.abs(stMatrix[0]) < 0.5f && Math.abs(stMatrix[5]) < 0.5f;
+        return matrixTurns ? 0 : rotation;
+    }
 }

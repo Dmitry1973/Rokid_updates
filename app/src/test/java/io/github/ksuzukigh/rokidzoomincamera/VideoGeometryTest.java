@@ -72,4 +72,30 @@ public final class VideoGeometryTest {
         assertEquals(1072, VideoGeometry.encoderSide(1079.9));
         assertEquals(800, VideoGeometry.encoderSide(810));
     }
+
+    @Test public void residualRotationFollowsTheCameraMatrix() {
+        // column-major 4x4; typical camera matrices: plain y-flip, and y-flip + 90 degree turn
+        float[] flipOnly = {1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1};
+        float[] turned = {0, -1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 1};
+        for (int r : new int[]{0, 90, 180, 270}) {
+            assertEquals(r, VideoGeometry.residualRotation(flipOnly, r));
+            assertEquals(0, VideoGeometry.residualRotation(turned, r));
+        }
+    }
+
+    @Test public void everyShapeAndSizeCropsInsideTheTexture() {
+        float[] shapes = {16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 1f};
+        for (int[] src : SIZES) {
+            for (float a : shapes) {
+                int[] up = VideoGeometry.upright(src[0], src[1], 90);
+                float[] t = VideoGeometry.texCoords(0, a, up[0], up[1]);
+                float w = t[2] - t[0];
+                float h = t[5] - t[1];
+                String what = src[0] + "x" + src[1] + " aspect " + a;
+                // same orientation as the output: width/height in pixels equals the aspect
+                assertEquals(what, a, w * up[0] / (h * up[1]), 0.01f);
+                for (float v : t) org.junit.Assert.assertTrue(what, v >= -1e-4f && v <= 1f + 1e-4f);
+            }
+        }
+    }
 }
