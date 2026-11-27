@@ -25,31 +25,27 @@
   selected in settings. Menu line «Видео получится: W×H».
 - HUD shows `ВИДЕО 16:9 1072p30` instead of a bare resolution; the format is in the file name.
 
-## Горизонт 1.2 (2026-11-27)
-- Меню по OK (нажать колесо / правая кнопка / тап): «Ноль здесь», «Сброс нуля (заводской)»,
-  источник, высота 0 здесь / стандарт 1013.25, сохранить список датчиков, страница, закрыть.
-  Колесо в меню — выбор, «Назад» — закрыть меню.
-- Индикатор скольжения (трапеция под указателем крена, как в G1000), курс (HDG; с магнитометром —
-  магнитный, иначе относительный), скорость разворота (TURN °/с + полоса со стандартными 3°/с),
-  перегрузка G.
-- С барометром: ALT (ft и m, по 1013.25 или относительно точки), VS (fpm), hPa.
-- Список датчиков сохраняется JPEG-ом в DCIM/Camera тем же способом, что фото камеры
-  (IS_PENDING), имя RokidHorizon_sensors_*.jpg; ошибка сохранения пишется на экране.
+## Horizon 1.2 (2026-11-27)
+- Menu on OK (wheel press / right ring button / temple tap): "set zero here", "reset zero (factory)",
+  attitude source, altitude zero here / standard 1013.25, save sensor list, switch page, close.
+  Wheel moves the selection, Back closes the menu.
+- Slip/skid indicator (trapezoid under the roll pointer, G1000-style), heading (magnetic with a
+  magnetometer, otherwise relative), turn rate (°/s plus a bar with standard-rate 3°/s marks), G load.
+- With a barometer: ALT (ft and m, standard 1013.25 or relative), VS (fpm), hPa. The RV101 has no barometer.
+- Sensor list saved as a JPEG in DCIM/Camera the same way the camera saves photos (IS_PENDING),
+  named RokidHorizon_sensors_*.jpg; a save error is shown on screen.
 
-## Горизонт 1.1 (2026-11-27)
-- Подписи PITCH / ROLL (мелко над крупными цифрами), давление в hPa.
-- Список датчиков теперь сохраняется картинкой в DCIM/Camera (Horizon_sensors_*.png) —
-  приходит на телефон через галерею Hi Rokid, как фото; .txt остаётся в Download очков.
-  Сохраняется один раз после установки 1.1, путь пишется на странице датчиков.
+## Horizon 1.1 (2026-11-27)
+- PITCH / ROLL labels (small, above the big numbers), pressure in hPa.
+- Sensor list also saved as a PNG in DCIM/Camera (did not reach the phone gallery; replaced in 1.2).
 
-## Горизонт 1.0 (2026-11-27) — модуль `horizon`, `kz.rokid.horizon`
-- Демо авиагоризонта на HUD: тангаж и крен крупно вверху, шкала тангажа через 5°,
-  шкала крена (0/10/20/30/45/60°), неподвижный силуэт самолёта.
-- Источники: Game Rotation Vector → Rotation Vector → акселерометр+гироскоп → акселерометр.
-- Давление в гПа, если в очках есть барометр.
-- Список всех датчиков на второй странице; один раз сохраняется в Download/Horizon_sensors_*.txt.
-- OK (тап по дужке, нажатие колеса, правая кнопка кольца): на горизонте — ноль,
-  на списке — следующий источник. Колесо/свайп — переключить страницу.
+## Horizon 1.0 (2026-11-27) — module `horizon`, `kz.rokid.horizon`
+- Artificial horizon demo on the HUD: pitch and roll at the top, pitch ladder every 5°,
+  roll scale (0/10/20/30/45/60°), fixed aircraft symbol.
+- Sources: Game Rotation Vector → Rotation Vector → accelerometer + gyroscope → accelerometer.
+- Pressure in hPa when the glasses have a barometer.
+- List of all sensors on a second page; saved once to Download/Horizon_sensors_*.txt.
+- OK: zero on the horizon page, next source on the sensor page; wheel/swipe switches pages.
 
 ## 2.6.0-ru (2026-11-25)
 - Photo formats with orientation: full frame, 16:9 / 9:16, 4:3 / 3:4, 3:2 / 2:3, 1:1. 16:9 is
