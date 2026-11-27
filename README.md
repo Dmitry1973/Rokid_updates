@@ -8,7 +8,7 @@ The project builds two APKs:
 
 | Module | App on the glasses | Purpose |
 |---|---|---|
-| `app` | **ZOOM Камера RU** (2.8.0-ru) | camera with smooth digital zoom, photo and video formats, resolution and fps choice |
+| `app` | **ZOOM Камера RU** (2.10.0-ru) | camera with smooth digital zoom, photo and video formats, resolution and fps choice |
 | `inputtest` | **Тест кнопок и кольца** (1.4) | shows which signals the temple touchpad, the button and the RGR06 ring send |
 
 The camera installs **next to** the original app (different application ID).
@@ -18,8 +18,9 @@ The camera installs **next to** the original app (different application ID).
 - **Ring works like a mouse, no duplicate actions:** press the wheel = photo / OK in menus /
   stop recording; turn the wheel = zoom / move in menus; right ring button = menu and settings
   (back inside menus). Without the ring: temple tap = photo / OK, swipe = zoom, Back = menu.
-- **Smooth zoom** 1×–4× in 0.1× steps (0.2 / 0.5 selectable), also while recording video.
-- **Photo formats with orientation:** full frame, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 1:1.
+- **Smooth zoom** 1×–4×: each click moves 0.1× and the zoom glides there in 0.01× ticks,
+  also while recording video.
+- **Photo formats with orientation:** 16:9, 9:16, 4:3, 3:4 (whole frame), 3:2, 2:3, 1:1.
   The full sensor frame is captured and zoom + crop are applied in software (`PhotoProcessor`),
   so the file always matches the viewfinder. EXIF rotation is taken into account.
 - **Video formats:** native (the camera gives 9:16 portrait on RV101), 16:9, 9:16, 4:3, 3:4, 1:1.
@@ -41,7 +42,7 @@ Do not press the glasses' camera button or the ring's **left** button: the syste
 
 | Item | Values |
 |---|---|
-| Формат ФОТО (photo format) | full frame, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, 1:1 |
+| Формат ФОТО (photo format) | 16:9 (default), 9:16, 4:3, 3:4 (whole frame), 3:2, 2:3, 1:1 |
 | Размер ФОТО (photo size) | max, or long side up to 3000 / 2000 / 1280 px |
 | Качество JPEG | 100, 95 (default), 90, 85, 80, 70 % |
 | Формат ВИДЕО (video format) | native, 16:9 (default), 9:16, 4:3, 3:4, 1:1 |
