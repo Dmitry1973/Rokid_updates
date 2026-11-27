@@ -25,6 +25,15 @@
   selected in settings. Menu line «Видео получится: W×H».
 - HUD shows `ВИДЕО 16:9 1072p30` instead of a bare resolution; the format is in the file name.
 
+## Горизонт 1.0 (2026-11-27) — модуль `horizon`, `kz.rokid.horizon`
+- Демо авиагоризонта на HUD: тангаж и крен крупно вверху, шкала тангажа через 5°,
+  шкала крена (0/10/20/30/45/60°), неподвижный силуэт самолёта.
+- Источники: Game Rotation Vector → Rotation Vector → акселерометр+гироскоп → акселерометр.
+- Давление в гПа, если в очках есть барометр.
+- Список всех датчиков на второй странице; один раз сохраняется в Download/Horizon_sensors_*.txt.
+- OK (тап по дужке, нажатие колеса, правая кнопка кольца): на горизонте — ноль,
+  на списке — следующий источник. Колесо/свайп — переключить страницу.
+
 ## 2.6.0-ru (2026-11-25)
 - Photo formats with orientation: full frame, 16:9 / 9:16, 4:3 / 3:4, 3:2 / 2:3, 1:1. 16:9 is
   always landscape, 9:16 always portrait (EXIF rotation is respected); the viewfinder frame

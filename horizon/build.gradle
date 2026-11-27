@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'kz.rokid.horizon'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'kz.rokid.horizon'
+        minSdk 32
+        targetSdk 32
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        // Shared debug key (keystore/debug.keystore), same as the other modules.
+        debug {
+            storeFile rootProject.file('keystore/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    lint {
+        disable 'ExpiredTargetSdkVersion'
+        abortOnError false
+    }
+}
