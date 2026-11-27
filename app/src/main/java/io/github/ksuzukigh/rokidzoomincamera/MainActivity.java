@@ -1219,7 +1219,7 @@ public final class MainActivity extends Activity {
             if (viaGl) {
                 int[] up = VideoGeometry.upright(source[0], source[1], rotation);
                 videoRenderer = new VideoGlRenderer(recordSurface, encoded[0], encoded[1], source[0], source[1],
-                        VideoGeometry.texCoords(rotation, options.videoFormat(), up[0], up[1]));
+                        rotation, options.videoFormat(), up[0], up[1]);
                 recordSurface = videoRenderer.start();
                 Log.i(TAG, "Video via GL: source " + source[0] + "x" + source[1] + " rot " + rotation +
                         " -> " + encoded[0] + "x" + encoded[1]);

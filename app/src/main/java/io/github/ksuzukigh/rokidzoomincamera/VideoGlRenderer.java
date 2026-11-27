@@ -53,7 +53,11 @@ final class VideoGlRenderer {
     private final int sourceWidth;
     private final int sourceHeight;
     private final FloatBuffer positions;
-    private final FloatBuffer texCoords;
+    private FloatBuffer texCoords;
+    private final int rotation;
+    private final float aspect;
+    private final int uprightWidth;
+    private final int uprightHeight;
     private final float[] stMatrix = new float[16];
 
     private HandlerThread thread;
@@ -73,15 +77,23 @@ final class VideoGlRenderer {
     private Exception startError;
     private long frames;
 
+    /**
+     * @param rotation clockwise turn that makes the camera picture upright
+     * @param aspect   width / height of the output as viewed
+     */
     VideoGlRenderer(Surface encoderSurface, int outWidth, int outHeight,
-                    int sourceWidth, int sourceHeight, float[] tex) {
+                    int sourceWidth, int sourceHeight, int rotation, float aspect,
+                    int uprightWidth, int uprightHeight) {
         this.encoderSurface = encoderSurface;
         this.outWidth = outWidth;
         this.outHeight = outHeight;
         this.sourceWidth = sourceWidth;
         this.sourceHeight = sourceHeight;
+        this.rotation = rotation;
+        this.aspect = aspect;
+        this.uprightWidth = uprightWidth;
+        this.uprightHeight = uprightHeight;
         positions = floats(POSITIONS);
-        texCoords = floats(tex);
     }
 
     /** Sets up OpenGL on its own thread; returns the surface the camera should draw into. */
@@ -185,6 +197,17 @@ final class VideoGlRenderer {
             texture.updateTexImage();
             if (!drawing) return;
             texture.getTransformMatrix(stMatrix);
+            if (texCoords == null) {
+                // On RV101 the camera already turns the SurfaceTexture picture upright
+                // (its transform matrix holds the 90-degree turn; 2.7.0 turned it a
+                // second time, so the file came out sideways). Turn here only what the
+                // matrix does not.
+                boolean matrixTurns = Math.abs(stMatrix[0]) < 0.5f && Math.abs(stMatrix[5]) < 0.5f;
+                int residual = matrixTurns ? 0 : rotation;
+                texCoords = floats(VideoGeometry.texCoords(residual, aspect, uprightWidth, uprightHeight));
+                Log.i(TAG, "VideoGl matrix " + java.util.Arrays.toString(stMatrix) +
+                        " turns=" + matrixTurns + " residual=" + residual);
+            }
             GLES20.glViewport(0, 0, outWidth, outHeight);
             GLES20.glClearColor(0f, 0f, 0f, 1f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
