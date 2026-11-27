@@ -44,10 +44,9 @@ public final class CaptureOptionsTest {
         o.change(CaptureOptions.ITEM_PHOTO_ASPECT, -1);
         assertEquals(1f, o.photoAspect(), 0.001f);
         o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
-        assertEquals(0f, o.photoAspect(), 0.001f);
-        assertEquals("весь кадр", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
-        o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
+        assertEquals(16f / 9f, o.photoAspect(), 0.001f);
         assertEquals("16:9 гориз.", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
+        for (float a : CaptureOptions.PHOTO_ASPECTS) org.junit.Assert.assertTrue("no full-frame option", a > 0f);
         o.change(CaptureOptions.ITEM_PHOTO_ASPECT, 1);
         assertEquals("9:16 верт.", o.valueLabel(CaptureOptions.ITEM_PHOTO_ASPECT));
         assertEquals(9f / 16f, o.photoAspect(), 0.001f);

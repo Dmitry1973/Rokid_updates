@@ -332,7 +332,8 @@ public final class MainActivity extends Activity {
         cameraManager = getSystemService(CameraManager.class);
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         // 2.6: formats now carry orientation (16:9 vs 9:16); old indexes meant other formats.
-        options.selectPhotoAspect(prefs.getInt("photo_aspect2", 0));
+        // 2.10: "full frame" removed (it equals 3:4 portrait); indexes shifted, so a new key.
+        options.selectPhotoAspect(prefs.getInt("photo_aspect3", 0));
         options.selectZoomStep(prefs.getInt("zoom_step", 0));
         options.selectVideoAspect(prefs.getInt("video_aspect", 1));
         options.frameOnly = prefs.getBoolean("frame_only", true);
@@ -773,7 +774,7 @@ public final class MainActivity extends Activity {
     private void savePrefs() {
         int[] size = options.videoSize();
         SharedPreferences.Editor editor = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putInt("photo_aspect2", options.photoAspectIndex)
+                .putInt("photo_aspect3", options.photoAspectIndex)
                 .putInt("zoom_step", options.zoomStepIndex)
                 .putInt("video_aspect", options.videoAspectIndex)
                 .putBoolean("frame_only", options.frameOnly)

@@ -41,10 +41,10 @@ final class CaptureOptions {
     static final int PREVIEW_SIZE_DEFAULT_INDEX = 1;
     static final int PREVIEW_SHIFT_DEFAULT_INDEX = 5;
 
-    /** Width / height of the photo as viewed; 0 = the whole camera frame. */
-    static final float[] PHOTO_ASPECTS = {0f, 16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
+    /** Width / height of the photo as viewed. 3:4 portrait is the whole RV101 camera frame. */
+    static final float[] PHOTO_ASPECTS = {16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 3f / 2f, 2f / 3f, 1f};
     private static final String[] PHOTO_ASPECT_LABELS = {
-            "весь кадр", "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт.",
+            "16:9 гориз.", "9:16 верт.", "4:3 гориз.", "3:4 верт. (весь кадр)",
             "3:2 гориз.", "2:3 верт.", "1:1"};
     /** Width / height of the video as viewed; 0 = as the camera gives it (no re-rendering). */
     static final float[] VIDEO_ASPECTS = {0f, 16f / 9f, 9f / 16f, 4f / 3f, 3f / 4f, 1f};

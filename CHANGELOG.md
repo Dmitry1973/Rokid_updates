@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.10.0-ru (2026-11-27)
+- Photo format «весь кадр» (full frame) removed: it duplicated 3:4 portrait and showed a frame
+  that did not say what gets saved. Every photo format now has its own frame matching the saved
+  crop. Formats: 16:9 (default), 9:16, 4:3, 3:4 (= whole camera frame), 3:2, 2:3, 1:1.
+  The photo format choice resets to 16:9 once.
+
 ## 2.9.0-ru (2026-11-27)
 - Lighter frame in frame-only view: corner brackets plus three short ticks per side instead of
   a solid outline, with a small caption «ФОТО 3:4 весь кадр» / «ВИДЕО 16:9» so it is clear which
